@@ -1,0 +1,155 @@
+package com.mazwas.coverlauncher.feature.launcher.data
+
+import android.app.NotificationManager
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.database.ContentObserver
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.location.LocationManager
+import android.media.AudioManager
+import android.net.wifi.WifiManager
+import android.os.BatteryManager
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
+import android.provider.Settings
+import android.telephony.SubscriptionManager
+import android.telephony.TelephonyManager
+import android.util.Log
+import com.mazwas.coverlauncher.core.system.Shell
+import com.mazwas.coverlauncher.core.system.TAG
+import com.mazwas.coverlauncher.feature.launcher.domain.QuickToggle
+import com.mazwas.coverlauncher.feature.launcher.domain.SoundMode
+import com.mazwas.coverlauncher.feature.launcher.domain.SystemStatus
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+
+/** Battery and every quick tile's state, live. */
+class SystemStatusSource(private val context: Context) {
+  private val wifi = context.getSystemService(WifiManager::class.java)
+  private val bluetooth: BluetoothAdapter? = context.getSystemService(BluetoothManager::class.java)?.adapter
+  private val camera = context.getSystemService(CameraManager::class.java)
+  private val notifications = context.getSystemService(NotificationManager::class.java)
+  private val telephony: TelephonyManager? = context.getSystemService(TelephonyManager::class.java)
+  private val audio = context.getSystemService(AudioManager::class.java)
+  private val location = context.getSystemService(LocationManager::class.java)
+  private val power = context.getSystemService(PowerManager::class.java)
+
+  private val base = combine(
+    broadcasts(Intent.ACTION_BATTERY_CHANGED),
+    flag(WifiManager.WIFI_STATE_CHANGED_ACTION) { wifi.isWifiEnabled },
+    flag(BluetoothAdapter.ACTION_STATE_CHANGED) { bluetooth?.isEnabled == true },
+    torch(),
+    flag(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED) {
+      notifications.currentInterruptionFilter > NotificationManager.INTERRUPTION_FILTER_ALL
+    },
+  ) { battery, wifiOn, btOn, torchOn, dndOn ->
+    val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, 0) ?: 0
+    val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, 100)?.coerceAtLeast(1) ?: 100
+    val plugged = battery?.getIntExtra(BatteryManager.EXTRA_STATUS, 0)
+    SystemStatus(
+      batteryPercent = level * 100 / scale,
+      charging = plugged == BatteryManager.BATTERY_STATUS_CHARGING || plugged == BatteryManager.BATTERY_STATUS_FULL,
+      wifiOn = wifiOn, bluetoothOn = btOn, torchOn = torchOn, dndOn = dndOn,
+    )
+  }
+
+  val status: Flow<SystemStatus> = combine(
+    base,
+    mobileData(),
+    flag(Intent.ACTION_AIRPLANE_MODE_CHANGED) {
+      Settings.Global.getInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) == 1
+    },
+    broadcasts(AudioManager.RINGER_MODE_CHANGED_ACTION).map { soundMode() }.distinctUntilChanged(),
+    combine(
+      flag(LocationManager.MODE_CHANGED_ACTION) { location.isLocationEnabled },
+      flag(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED) { power.isPowerSaveMode },
+      ::Pair,
+    ),
+  ) { status, dataOn, airplaneOn, sound, (locationOn, saverOn) ->
+    status.copy(dataOn = dataOn, airplaneOn = airplaneOn, sound = sound, locationOn = locationOn, saverOn = saverOn)
+  }
+
+  /** Emits the sticky intent (or null) right away, then every broadcast. */
+  private fun broadcasts(action: String): Flow<Intent?> = callbackFlow {
+    val receiver = object : BroadcastReceiver() {
+      override fun onReceive(c: Context, intent: Intent) { trySend(intent) }
+    }
+    // EXPORTED: some of these come from non-system uids (e.g. the Bluetooth stack); all are protected broadcasts
+    trySend(context.registerReceiver(receiver, IntentFilter(action), Context.RECEIVER_EXPORTED))
+    awaitClose { context.unregisterReceiver(receiver) }
+  }
+
+  /** A state read now and again on every [action] broadcast. */
+  private fun flag(action: String, read: () -> Boolean): Flow<Boolean> =
+    broadcasts(action).map { read() }.distinctUntilChanged()
+
+  private fun soundMode() = when (audio.ringerMode) {
+    AudioManager.RINGER_MODE_SILENT -> SoundMode.Silent
+    AudioManager.RINGER_MODE_VIBRATE -> SoundMode.Vibrate
+    else -> SoundMode.Ring
+  }
+
+  // No broadcast for it: the data switch writes mobile_data and mobile_data<subId>
+  private fun mobileData(): Flow<Boolean> = callbackFlow {
+    val read = { trySend(runCatching { telephony?.isDataEnabled == true }.getOrDefault(false)) }
+    val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+      override fun onChange(selfChange: Boolean) { read() }
+    }
+    val sub = SubscriptionManager.getDefaultDataSubscriptionId()
+    listOf("mobile_data", "mobile_data$sub").forEach {
+      context.contentResolver.registerContentObserver(Settings.Global.getUriFor(it), false, observer)
+    }
+    read()
+    awaitClose { context.contentResolver.unregisterContentObserver(observer) }
+  }.distinctUntilChanged()
+
+  private fun torch(): Flow<Boolean> = callbackFlow {
+    val id = torchCamera()
+    trySend(false)
+    val callback = object : CameraManager.TorchCallback() {
+      override fun onTorchModeChanged(cameraId: String, enabled: Boolean) { if (cameraId == id) trySend(enabled) }
+    }
+    camera.registerTorchCallback(callback, Handler(Looper.getMainLooper()))
+    awaitClose { camera.unregisterTorchCallback(callback) }
+  }
+
+  private fun torchCamera(): String? = camera.cameraIdList.firstOrNull {
+    camera.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+  }
+
+  /** Flip a quick toggle. The new state comes back through [status]. */
+  fun toggle(toggle: QuickToggle, on: Boolean) {
+    when (toggle) {
+      QuickToggle.Wifi -> Shell.exec("cmd", "wifi", "set-wifi-enabled", if (on) "enabled" else "disabled")
+      QuickToggle.Bluetooth -> Shell.exec("cmd", "bluetooth_manager", if (on) "enable" else "disable")
+      QuickToggle.Data -> Shell.exec("cmd", "phone", "data", if (on) "enable" else "disable")
+      QuickToggle.Dnd -> Shell.exec("cmd", "notification", "set_dnd", if (on) "on" else "off")
+      QuickToggle.Airplane -> Shell.exec("cmd", "connectivity", "airplane-mode", if (on) "enable" else "disable")
+      QuickToggle.Location -> Shell.exec("cmd", "location", "set-location-enabled", "$on")
+      QuickToggle.Saver -> Shell.exec("cmd", "power", "set-mode", if (on) "1" else "0")
+      QuickToggle.Torch -> torchCamera()?.let { runCatching { camera.setTorchMode(it, on) } }
+      QuickToggle.Sound -> setSound(if (on) SoundMode.Ring else SoundMode.Silent)
+    }
+  }
+
+  /** Silent needs Do Not Disturb access (Grants: allow_dnd). */
+  fun setSound(mode: SoundMode) {
+    runCatching {
+      audio.ringerMode = when (mode) {
+        SoundMode.Ring -> AudioManager.RINGER_MODE_NORMAL
+        SoundMode.Vibrate -> AudioManager.RINGER_MODE_VIBRATE
+        SoundMode.Silent -> AudioManager.RINGER_MODE_SILENT
+      }
+    }.onFailure { Log.w(TAG, "ringer mode $mode failed", it) }
+  }
+}

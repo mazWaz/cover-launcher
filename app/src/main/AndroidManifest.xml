@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <!-- granted with `appops set ... SYSTEM_ALERT_WINDOW allow` (Grants); lets CoverService start the launcher from the background -->
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+  <!-- a launcher sees every app: drawer, notification app labels -->
+  <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+  <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+  <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+  <!-- TelephonyManager.isDataEnabled for the data tile -->
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+  <application
+    android:name=".App"
+    android:icon="@mipmap/ic_launcher"
+    android:label="Cover Launcher"
+    android:theme="@style/Theme.Cover">
+
+    <!-- MAIN/LAUNCHER so MultiStar lists it and its widget can open it on the cover.
+         Handles every config change itself: no recreation (and no flash) on fold, keyboard or density changes. -->
+    <activity
+      android:name=".feature.launcher.presentation.LauncherActivity"
+      android:exported="true"
+      android:launchMode="singleTask"
+      android:excludeFromRecents="true"
+      android:resizeableActivity="true"
+      android:windowSoftInputMode="adjustResize"
+      android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|uiMode|keyboard|keyboardHidden|navigation">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity>
+
+    <!-- enabled by Grants (settings put secure enabled_accessibility_services ...) -->
+    <service
+      android:name=".feature.cover.CoverService"
+      android:exported="true"
+      android:label="Cover Launcher"
+      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+      <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+      </intent-filter>
+      <meta-data android:name="android.accessibilityservice" android:resource="@xml/cover_service" />
+    </service>
+
+    <!-- enabled by Grants (cmd notification allow_listener ...) -->
+    <service
+      android:name=".feature.launcher.data.NotificationListener"
+      android:exported="true"
+      android:label="Cover Launcher"
+      android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+      <intent-filter>
+        <action android:name="android.service.notification.NotificationListenerService" />
+      </intent-filter>
+    </service>
+
+    <!-- Shizuku hands us its binder through this provider (also wakes us when Shizuku starts) -->
+    <provider
+      android:name="rikka.shizuku.ShizukuProvider"
+      android:authorities="${applicationId}.shizuku"
+      android:enabled="true"
+      android:exported="true"
+      android:multiprocess="false"
+      android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+  </application>
+</manifest>

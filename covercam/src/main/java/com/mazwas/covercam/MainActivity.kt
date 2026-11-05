@@ -91,11 +91,17 @@ class MainActivity : ComponentActivity() {
   private var countdown by mutableStateOf(0)
   private var pendingCapture: Runnable? = null
 
-  /** Volume keys act as a hardware shutter, like every real camera app. */
+  /** Volume-down = shutter, volume-up = next mode (hardware control, no pixel hunting). */
   override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-    if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
-      shoot()
-      return true
+    when (keyCode) {
+      KeyEvent.KEYCODE_VOLUME_DOWN -> {
+        shoot()
+        return true
+      }
+      KeyEvent.KEYCODE_VOLUME_UP -> {
+        engine.cycleMode()
+        return true
+      }
     }
     return super.onKeyDown(keyCode, event)
   }

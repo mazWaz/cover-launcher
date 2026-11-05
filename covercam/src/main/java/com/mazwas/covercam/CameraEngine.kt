@@ -708,6 +708,11 @@ class CameraEngine(private val ctx: Context) {
     state = state.copy(timerSeconds = next)
   }
 
+  fun cycleMode() {
+    val all = Mode.entries
+    setMode(all[(state.mode.ordinal + 1) % all.size])
+  }
+
   fun setMode(mode: Mode) {
     if (state.recording) stopRecording()
     if (mode == Mode.PRO && !state.manual) {
@@ -718,6 +723,7 @@ class CameraEngine(private val ctx: Context) {
       state = state.copy(iso = iso, exposureNs = exp)
     }
     prefs.edit().putString("mode", mode.name).apply()
+    Log.i(TAG, "mode=" + mode.name)
     state = state.copy(mode = mode, manual = mode == Mode.PRO)
     refreshPreview()
   }
@@ -1409,8 +1415,10 @@ class CameraEngine(private val ctx: Context) {
       recorderSurface = rec.surface
       Log.i(TAG, "slowmo recording " + hs.width + "x" + hs.height + "@" + hsFps)
 
-      val preview = previewSurface ?: return false
-      val surfaces = listOf(preview, rec.surface)
+      // A constrained high-speed session only accepts surfaces whose size is in the
+      // published high-speed list (here 1280x720 / 1920x1080). The TextureView preview is
+      // 1920x1440, so it cannot join: record-only, and the preview keeps its last frame.
+      val surfaces = listOf(rec.surface)
       cam.createConstrainedHighSpeedCaptureSession(surfaces, object : CameraCaptureSession.StateCallback() {
         override fun onConfigured(s: CameraCaptureSession) {
           session = s
@@ -1424,7 +1432,11 @@ class CameraEngine(private val ctx: Context) {
               .createHighSpeedRequestList(b.build())
             s.setRepeatingBurst(list, null, handler)
             recorder?.start()
-            state = state.copy(recording = true, recordingPaused = false, status = "slowmo " + hsFps + "fps")
+            state = state.copy(
+              recording = true,
+              recordingPaused = false,
+              status = "slowmo " + hsFps + "fps (preview paused)",
+            )
           } catch (t: Throwable) {
             Log.e(TAG, "slowmo start failed", t)
             state = state.copy(status = "slowmo failed: " + t.message)

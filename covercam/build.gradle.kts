@@ -35,5 +35,13 @@ dependencies {
   debugImplementation("androidx.compose.ui:ui-tooling")
   implementation("androidx.activity:activity-compose:1.13.0")
 
+  // MVI plumbing: ViewModel + collectAsStateWithLifecycle, Koin 4 DI (constructor DSL,
+  // no compiler plugin).
+  implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
+  implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+  implementation(platform("io.insert-koin:koin-bom:4.2.2"))
+  implementation("io.insert-koin:koin-android")
+  implementation("io.insert-koin:koin-androidx-compose")
+
   testImplementation("junit:junit:4.13.2")
 }

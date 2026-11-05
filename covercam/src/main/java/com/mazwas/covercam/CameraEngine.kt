@@ -76,6 +76,9 @@ class CameraEngine(private val ctx: Context) {
     val busy: Boolean = false,
   )
 
+  /** Exposed so the ViewModel can reach the application context without a second Koin binding. */
+  val appContext: Context get() = ctx
+
   var state by mutableStateOf(State())
     private set
 

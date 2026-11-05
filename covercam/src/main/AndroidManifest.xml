@@ -9,6 +9,7 @@
   <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
   <application
+    android:name=".CoverCamApp"
     android:label="CoverCam"
     android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
     android:hardwareAccelerated="true">

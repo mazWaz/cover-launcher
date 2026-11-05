@@ -26,6 +26,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -277,7 +279,8 @@ class MainActivity : ComponentActivity() {
 
       // Live preview while recording slow motion: the high-speed session rejects the
       // TextureView (1920x1440), but a SurfaceView with a fixed 720p buffer fits.
-      if (state.mode == CameraEngine.Mode.SLOWMO) {
+      // Outside a take the TextureView is the live one, so only mount this while recording.
+      if (state.mode == CameraEngine.Mode.SLOWMO && state.recording) {
         AndroidView(
           factory = { c ->
             android.view.SurfaceView(c).apply {
@@ -405,7 +408,12 @@ class MainActivity : ComponentActivity() {
         Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
-        Row(horizontalArrangement = Arrangement.Center) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.Center,
+        ) {
           ModeChip("FOTO", state.mode == CameraEngine.Mode.PHOTO) { engine.setMode(CameraEngine.Mode.PHOTO) }
           ModeChip("VIDEO", state.mode == CameraEngine.Mode.VIDEO) { engine.setMode(CameraEngine.Mode.VIDEO) }
           ModeChip("PRO", state.mode == CameraEngine.Mode.PRO) { engine.setMode(CameraEngine.Mode.PRO) }
@@ -751,8 +759,10 @@ class MainActivity : ComponentActivity() {
   private fun MediaThumb(uri: Uri, onClick: () -> Unit) {
     val ctx = LocalContext.current
     var bmp by remember(uri) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var loaded by remember(uri) { mutableStateOf(false) }
     LaunchedEffect(uri) {
       bmp = decodeRotated(ctx, uri, 8)
+      loaded = true
     }
     Box(
       Modifier
@@ -761,8 +771,13 @@ class MainActivity : ComponentActivity() {
         .clickable { onClick() },
       contentAlignment = Alignment.Center,
     ) {
-      bmp?.let { Image(it.asImageBitmap(), contentDescription = "Foto galeri", modifier = Modifier.fillMaxSize()) }
-        ?: Text("…", color = Dim, fontSize = 12.sp)
+      val image = bmp
+      when {
+        image != null -> Image(image.asImageBitmap(), contentDescription = "Foto galeri", modifier = Modifier.fillMaxSize())
+        // A DNG decodes to null by design - label it instead of showing an empty tile.
+        loaded -> Text("RAW", color = Dim, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        else -> Text("…", color = Dim, fontSize = 12.sp)
+      }
     }
   }
 

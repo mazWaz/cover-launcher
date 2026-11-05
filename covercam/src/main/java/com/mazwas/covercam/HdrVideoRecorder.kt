@@ -84,15 +84,15 @@ class HdrVideoRecorder(
     } catch (t: Throwable) {
       Log.w(TAG, "HDR encoder drain failed", t)
     }
-    runCatching { encoder?.stop() }
-    runCatching { encoder?.release() }
-    runCatching { inputSurface?.release() }
+    runCatching { encoder?.stop() }.onFailure { Log.w(TAG, "encoder stop failed", it) }
+    runCatching { encoder?.release() }.onFailure { Log.w(TAG, "encoder release failed", it) }
+    runCatching { inputSurface?.release() }.onFailure { Log.w(TAG, "surface release failed", it) }
     encoder = null
     inputSurface = null
     runCatching {
       if (muxerStarted) muxer.stop()
-    }
-    runCatching { muxer.release() }
+    }.onFailure { Log.w(TAG, "muxer stop failed", it) }
+    runCatching { muxer.release() }.onFailure { Log.w(TAG, "muxer release failed", it) }
     muxerStarted = false
   }
 

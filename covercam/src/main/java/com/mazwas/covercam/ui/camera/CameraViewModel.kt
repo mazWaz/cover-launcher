@@ -166,12 +166,20 @@ class CameraViewModel(private val engine: CameraEngine) : ViewModel() {
   private fun toggleRecording() {
     when (engine.state.mode) {
       CameraEngine.Mode.TIMELAPSE -> engine.toggleTimelapse()
-      CameraEngine.Mode.SLOWMO -> if (engine.state.recording) engine.stopRecording() else engine.startSlowMotion()
-      CameraEngine.Mode.HDRVID -> if (engine.state.recording) engine.stopHdrVideo() else engine.startHdrVideo()
+      CameraEngine.Mode.SLOWMO -> if (engine.state.recording) {
+        engine.stopRecording()
+      } else if (!engine.startSlowMotion()) {
+        _events.trySend(CameraEvent.Error("slow motion tidak didukung kamera ini"))
+      }
+      CameraEngine.Mode.HDRVID -> if (engine.state.recording) {
+        engine.stopHdrVideo()
+      } else if (!engine.startHdrVideo()) {
+        _events.trySend(CameraEvent.Error("HDR video gagal dimulai"))
+      }
       CameraEngine.Mode.VIDEO -> if (engine.state.recording) {
         engine.pauseOrResumeRecording()
-      } else {
-        engine.startRecording()
+      } else if (!engine.startRecording()) {
+        _events.trySend(CameraEvent.Error("rekaman gagal dimulai"))
       }
       else -> Unit
     }
@@ -187,11 +195,19 @@ class CameraViewModel(private val engine: CameraEngine) : ViewModel() {
   }
 
   private fun toggleSlowMotion() {
-    if (engine.state.recording) engine.stopRecording() else engine.startSlowMotion()
+    if (engine.state.recording) {
+      engine.stopRecording()
+    } else if (!engine.startSlowMotion()) {
+      _events.trySend(CameraEvent.Error("slow motion tidak didukung kamera ini"))
+    }
   }
 
   private fun toggleHdrVideo() {
-    if (engine.state.recording) engine.stopHdrVideo() else engine.startHdrVideo()
+    if (engine.state.recording) {
+      engine.stopHdrVideo()
+    } else if (!engine.startHdrVideo()) {
+      _events.trySend(CameraEvent.Error("HDR video gagal dimulai"))
+    }
   }
 
   // ---------------------------------------------------------------- gallery

@@ -258,10 +258,17 @@ class CameraEngine(private val ctx: Context) {
   fun currentZoom(): Float = zoomRatio
 
   /** Grabs a small JPEG preview so the DNG can embed it (galleries then show real colours). */
+  private fun canRecordAudio(): Boolean =
+    ctx.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
+      android.content.pm.PackageManager.PERMISSION_GRANTED
+
   fun stashPreview() {
-    val bmp = runCatching { textureView?.getBitmap(480, 360) }.getOrNull() ?: return
+    val bmp = runCatching { textureView?.getBitmap(480, 360) }
+      .onFailure { Log.w(TAG, "preview grab failed", it) }
+      .getOrNull() ?: return
     val bos = ByteArrayOutputStream()
     runCatching { bmp.compress(Bitmap.CompressFormat.JPEG, 80, bos) }
+      .onFailure { Log.w(TAG, "preview compress failed", it) }
     bmp.recycle()
     lastPreviewJpeg = bos.toByteArray()
   }
@@ -1269,7 +1276,7 @@ class CameraEngine(private val ctx: Context) {
       Log.i(TAG, "video " + size.width + "x" + size.height + "@" + fps + " choices=" + supported.size)
 
       val rec = MediaRecorder(ctx)
-      rec.setAudioSource(MediaRecorder.AudioSource.MIC)
+      if (canRecordAudio()) rec.setAudioSource(MediaRecorder.AudioSource.MIC)
       rec.setVideoSource(MediaRecorder.VideoSource.SURFACE)
       rec.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
       rec.setOutputFile(pfd.fileDescriptor)
@@ -1277,7 +1284,7 @@ class CameraEngine(private val ctx: Context) {
       rec.setVideoFrameRate(fps)
       rec.setVideoSize(size.width, size.height)
       rec.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
-      rec.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+      if (canRecordAudio()) rec.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
       rec.prepare()
       recorder = rec
       recorderSurface = rec.surface
@@ -1317,7 +1324,10 @@ class CameraEngine(private val ctx: Context) {
               s.setRepeatingRequest(b.build(), null, handler)
               try {
                 recorder?.start()
-                state = state.copy(recording = true, status = "recording")
+                state = state.copy(
+                  recording = true,
+                  status = if (canRecordAudio()) "recording" else "recording (no audio)",
+                )
               } catch (t: Throwable) {
                 Log.e(TAG, "recorder start failed", t)
                 state = state.copy(status = "recorder start failed: ${t.message}")
@@ -1385,7 +1395,7 @@ class CameraEngine(private val ctx: Context) {
       val pfd = ctx.contentResolver.openFileDescriptor(uri, "w") ?: return false
 
       val rec = MediaRecorder(ctx)
-      rec.setAudioSource(MediaRecorder.AudioSource.MIC)
+      if (canRecordAudio()) rec.setAudioSource(MediaRecorder.AudioSource.MIC)
       rec.setVideoSource(MediaRecorder.VideoSource.SURFACE)
       rec.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
       rec.setOutputFile(pfd.fileDescriptor)
@@ -1393,7 +1403,7 @@ class CameraEngine(private val ctx: Context) {
       rec.setVideoFrameRate(hsFps)
       rec.setVideoSize(hs.width, hs.height)
       rec.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
-      rec.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+      if (canRecordAudio()) rec.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
       rec.prepare()
       recorder = rec
       recorderSurface = rec.surface

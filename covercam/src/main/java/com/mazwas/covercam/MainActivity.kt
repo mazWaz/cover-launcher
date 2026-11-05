@@ -89,6 +89,7 @@ class MainActivity : ComponentActivity() {
   private val ui = Handler(Looper.getMainLooper())
   private val shutterSound by lazy { MediaActionSound() }
   private var countdown by mutableStateOf(0)
+  private var pendingCapture: Runnable? = null
 
   /** Volume keys act as a hardware shutter, like every real camera app. */
   override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -127,6 +128,9 @@ class MainActivity : ComponentActivity() {
   }
 
   override fun onDestroy() {
+    // A pending timer capture must not fire after the engine is closed.
+    pendingCapture?.let { ui.removeCallbacks(it) }
+    pendingCapture = null
     engine.close()
     super.onDestroy()
   }
@@ -135,10 +139,13 @@ class MainActivity : ComponentActivity() {
     val s = engine.state
     if (s.timerSeconds > 0) {
       countdown = s.timerSeconds
-      ui.postDelayed({
+      val task = Runnable {
         countdown = 0
+        pendingCapture = null
         doCapture()
-      }, s.timerSeconds * 1000L)
+      }
+      pendingCapture = task
+      ui.postDelayed(task, s.timerSeconds * 1000L)
     } else {
       doCapture()
     }

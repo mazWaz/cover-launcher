@@ -157,7 +157,8 @@ class CameraViewModel(private val engine: CameraEngine) : ViewModel() {
   }
 
   private fun doCapture() {
-    runCatching { shutterSound.play(MediaActionSound.SHUTTER_CLICK) }
+    // SHUTTER SOUND was written by the settings row but never read: the click always played.
+    if (engine.soundOn) runCatching { shutterSound.play(MediaActionSound.SHUTTER_CLICK) }
     if (engine.dngOn) engine.stashPreview()
     engine.capture()
   }

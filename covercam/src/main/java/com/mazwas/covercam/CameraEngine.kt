@@ -1055,7 +1055,12 @@ class CameraEngine(private val ctx: Context) {
    * Full-resolution merge without loading every frame at once: the image is decoded in
    * horizontal strips with BitmapRegionDecoder, so a 12 MP x 5-frame merge stays inside
    * a few tens of MB instead of hundreds.
+   *
+   * The byte[] overload is deprecated in favour of the ByteBuffer one, but our frames are plain
+   * in-memory JPEG bytes (not direct buffers), so the simple overload stays; suppress on the
+   * function because an annotation inside the lambda body is not a valid expression position.
    */
+  @Suppress("DEPRECATION")
   private fun processFullRes(frames: List<ByteArray>, night: Boolean): ByteArray {
     val decoders = frames.mapNotNull {
       runCatching { android.graphics.BitmapRegionDecoder.newInstance(it, 0, it.size, false) }.getOrNull()
@@ -1436,7 +1441,8 @@ class CameraEngine(private val ctx: Context) {
       // published high-speed list (here 1280x720 / 1920x1080). The TextureView preview is
       // 1920x1440, so it cannot join: record-only, and the preview keeps its last frame.
       val surfaces = listOfNotNull(rec.surface, slowPreviewSurface)
-      cam.createConstrainedHighSpeedCaptureSession(surfaces, object : CameraCaptureSession.StateCallback() {
+      val outputConfigs = surfaces.map { android.hardware.camera2.params.OutputConfiguration(it) }
+      val highSpeedCallback = object : CameraCaptureSession.StateCallback() {
         override fun onConfigured(s: CameraCaptureSession) {
           session = s
           val b = cam.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
@@ -1465,7 +1471,15 @@ class CameraEngine(private val ctx: Context) {
           state = state.copy(status = "slowmo config failed")
           stopRecordingSafe()
         }
-      }, handler)
+      }
+      cam.createCaptureSession(
+        android.hardware.camera2.params.SessionConfiguration(
+          android.hardware.camera2.params.SessionConfiguration.SESSION_HIGH_SPEED,
+          outputConfigs,
+          java.util.concurrent.Executor { r -> handler.post(r) },
+          highSpeedCallback,
+        ),
+      )
       return true
     } catch (t: Throwable) {
       Log.e(TAG, "slowmo failed", t)
@@ -1514,8 +1528,10 @@ class CameraEngine(private val ctx: Context) {
         videoCfg.setDynamicRangeProfile(android.hardware.camera2.params.DynamicRangeProfiles.HLG10)
       }.onFailure { Log.w(TAG, "HLG10 profile rejected, falling back to SDR surface", it) }
 
-      cam.createCaptureSessionByOutputConfigurations(
+      val config = android.hardware.camera2.params.SessionConfiguration(
+        android.hardware.camera2.params.SessionConfiguration.SESSION_REGULAR,
         listOf(previewCfg, videoCfg),
+        java.util.concurrent.Executor { r -> handler.post(r) },
         object : CameraCaptureSession.StateCallback() {
           override fun onConfigured(s: CameraCaptureSession) {
             session = s
@@ -1535,8 +1551,8 @@ class CameraEngine(private val ctx: Context) {
             stopHdrVideo()
           }
         },
-        handler,
       )
+      cam.createCaptureSession(config)
       return true
     } catch (t: Throwable) {
       Log.e(TAG, "hdr video failed", t)

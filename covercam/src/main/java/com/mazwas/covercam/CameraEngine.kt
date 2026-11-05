@@ -80,8 +80,15 @@ class CameraEngine(private val ctx: Context) {
     private set
 
   private val manager = ctx.getSystemService(CameraManager::class.java)
-  private val thread = HandlerThread("covercam").apply { start() }
-  private val handler = Handler(thread.looper)
+
+  /**
+   * Camera callbacks run on the main looper.
+   *
+   * Every callback writes Compose state and touches the TextureView, so marshalling them here
+   * removes a whole class of cross-thread state writes (and makes setTransform/getBitmap legal).
+   * The heavy work — decoding, merging, stitching — is still pushed to worker threads.
+   */
+  private val handler = Handler(android.os.Looper.getMainLooper())
 
   private var device: CameraDevice? = null
   private var session: CameraCaptureSession? = null
@@ -421,7 +428,6 @@ class CameraEngine(private val ctx: Context) {
     opening = false
     stopRecordingSafe()
     closeDevice()
-    thread.quitSafely()
   }
 
   /** Closes the camera/reader but keeps the preview Surface alive (video hands it to a new session). */
@@ -1145,7 +1151,10 @@ class CameraEngine(private val ctx: Context) {
 
   /** Portrait: keep the centre sharp, blur everything outside an oval. */
   private fun blurBackground(bytes: ByteArray): ByteArray {
-    val src = runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }.getOrNull() ?: return bytes
+    // Decode at half resolution: a full 12 MP ARGB bitmap is ~48 MB and two of them plus the
+    // blurred copy is enough to OOM a phone that is already holding camera buffers.
+    val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+    val src = runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) }.getOrNull() ?: return bytes
     val w = src.width
     val h = src.height
     val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)

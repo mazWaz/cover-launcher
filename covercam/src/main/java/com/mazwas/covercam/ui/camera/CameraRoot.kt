@@ -16,7 +16,9 @@ fun CameraRoot(viewModel: CameraViewModel = koinViewModel()) {
   val state by viewModel.state.collectAsStateWithLifecycle()
   ObserveAsEvents(viewModel.events) { event ->
     when (event) {
-      is CameraEvent.PhotoSaved -> Log.d("CoverCamRoot", "saved ${event.uri}")
+      // INFO (not DEBUG): the event sink must be visible in a default logcat buffer, otherwise a
+      // silently dropped event looks identical to a working one.
+      is CameraEvent.PhotoSaved -> Log.i("CoverCamRoot", "saved ${event.uri}")
       is CameraEvent.Error -> Log.w("CoverCamRoot", event.message)
     }
   }

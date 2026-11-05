@@ -109,6 +109,7 @@ class CameraEngine(private val ctx: Context) {
   private var recorderSurface: Surface? = null
 
   private var sensorOrientation = 90
+  private var activeArray: Rect? = null
 
   private var timelapseRunning = false
   private var capHighSpeed = false
@@ -461,6 +462,7 @@ class CameraEngine(private val ctx: Context) {
     try {
       val ch = manager.getCameraCharacteristics(id)
       sensorOrientation = ch.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+      activeArray = ch.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
       val map = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
       val previewSize = pickPreviewSize(map?.getOutputSizes(android.graphics.SurfaceTexture::class.java) ?: emptyArray())
       jpegSize = pickJpegSize(map?.getOutputSizes(ImageFormat.JPEG) ?: emptyArray(), ratio)
@@ -607,15 +609,23 @@ class CameraEngine(private val ctx: Context) {
     val w = tv.width.toFloat()
     val h = tv.height.toFloat()
     if (w <= 0f || h <= 0f) return null
-    val half = 100
-    val cx = (p.x / w * 2000).toInt().coerceIn(0, 2000)
-    val cy = (p.y / h * 2000).toInt().coerceIn(0, 2000)
+    // Meter against the sensor's real active array, not an assumed 2000x2000 grid.
+    val sensor = activeArray
+    val sw = (sensor?.width() ?: 2000).toFloat()
+    val sh = (sensor?.height() ?: 2000).toFloat()
+    val ox = (sensor?.left ?: 0).toInt()
+    val oy = (sensor?.top ?: 0).toInt()
+    val halfW = (sw * 0.1f).toInt()
+    val halfH = (sh * 0.1f).toInt()
+    val cx = ox + (p.x / w * sw).toInt()
+    val cy = oy + (p.y / h * sh).toInt()
     val rect = Rect(
-      (cx - half).coerceIn(0, 2000),
-      (cy - half).coerceIn(0, 2000),
-      (cx + half).coerceIn(0, 2000),
-      (cy + half).coerceIn(0, 2000),
+      (cx - halfW).coerceIn(ox, ox + sw.toInt()),
+      (cy - halfH).coerceIn(oy, oy + sh.toInt()),
+      (cx + halfW).coerceIn(ox, ox + sw.toInt()),
+      (cy + halfH).coerceIn(oy, oy + sh.toInt()),
     )
+    if (rect.width() <= 0 || rect.height() <= 0) return null
     return MeteringRectangle(rect, MeteringRectangle.METERING_WEIGHT_MAX)
   }
 

@@ -718,7 +718,7 @@ class MainActivity : ComponentActivity() {
         .clickable { onClick() },
       contentAlignment = Alignment.Center,
     ) {
-      bmp?.let { Image(it.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize()) }
+      bmp?.let { Image(it.asImageBitmap(), contentDescription = "Foto galeri", modifier = Modifier.fillMaxSize()) }
         ?: Text("…", color = Dim, fontSize = 12.sp)
     }
   }
@@ -750,7 +750,7 @@ class MainActivity : ComponentActivity() {
         Text("TUTUP", color = Fg, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onClose() })
       }
       bmp?.let {
-        Image(it.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize().padding(4.dp))
+        Image(it.asImageBitmap(), contentDescription = "Pratinjau foto", modifier = Modifier.fillMaxSize().padding(4.dp))
       }
     }
   }

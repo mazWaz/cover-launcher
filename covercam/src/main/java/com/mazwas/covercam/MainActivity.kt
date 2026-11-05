@@ -70,6 +70,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -273,6 +274,35 @@ class MainActivity : ComponentActivity() {
             }
           },
       )
+
+      // Live preview while recording slow motion: the high-speed session rejects the
+      // TextureView (1920x1440), but a SurfaceView with a fixed 720p buffer fits.
+      if (state.mode == CameraEngine.Mode.SLOWMO) {
+        AndroidView(
+          factory = { c ->
+            android.view.SurfaceView(c).apply {
+              holder.setFixedSize(1280, 720)
+              holder.addCallback(object : android.view.SurfaceHolder.Callback {
+                override fun surfaceCreated(h: android.view.SurfaceHolder) {
+                  engine.setSlowPreviewSurface(h.surface)
+                }
+
+                override fun surfaceChanged(h: android.view.SurfaceHolder, format: Int, w: Int, ht: Int) = Unit
+
+                override fun surfaceDestroyed(h: android.view.SurfaceHolder) {
+                  engine.setSlowPreviewSurface(null)
+                }
+              })
+            }
+          },
+          modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+              rotationZ = engine.previewRotationDegrees().toFloat()
+              scaleX = if (engine.previewMirrored()) -1f else 1f
+            },
+        )
+      }
 
       peakBmp?.let { mask ->
         Image(mask.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize().alpha(0.85f))

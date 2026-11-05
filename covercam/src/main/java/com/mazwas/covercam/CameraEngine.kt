@@ -111,6 +111,7 @@ class CameraEngine(private val ctx: Context) {
   private var illuminant1 = 21
   private var illuminant2 = 17
   private var previewSurface: Surface? = null
+  private var slowPreviewSurface: Surface? = null
   private var textureView: TextureView? = null
   private var recorder: MediaRecorder? = null
   private var recorderSurface: Surface? = null
@@ -256,6 +257,19 @@ class CameraEngine(private val ctx: Context) {
   }
 
   fun currentZoom(): Float = zoomRatio
+
+  /**
+   * 720p surface used only while recording slow motion: a constrained high-speed session
+   * rejects the 1920x1440 TextureView, but a SurfaceView with a fixed buffer size fits the
+   * published list, so the preview stays live.
+   */
+  fun setSlowPreviewSurface(surface: Surface?) {
+    slowPreviewSurface = surface
+  }
+
+  fun previewRotationDegrees(): Int = previewRotation()
+
+  fun previewMirrored(): Boolean = mirrorFor(currentId)
 
   /** Grabs a small JPEG preview so the DNG can embed it (galleries then show real colours). */
   private fun canRecordAudio(): Boolean =
@@ -1418,7 +1432,7 @@ class CameraEngine(private val ctx: Context) {
       // A constrained high-speed session only accepts surfaces whose size is in the
       // published high-speed list (here 1280x720 / 1920x1080). The TextureView preview is
       // 1920x1440, so it cannot join: record-only, and the preview keeps its last frame.
-      val surfaces = listOf(rec.surface)
+      val surfaces = listOfNotNull(rec.surface, slowPreviewSurface)
       cam.createConstrainedHighSpeedCaptureSession(surfaces, object : CameraCaptureSession.StateCallback() {
         override fun onConfigured(s: CameraCaptureSession) {
           session = s
@@ -1435,7 +1449,7 @@ class CameraEngine(private val ctx: Context) {
             state = state.copy(
               recording = true,
               recordingPaused = false,
-              status = "slowmo " + hsFps + "fps (preview paused)",
+              status = "slowmo " + hsFps + "fps",
             )
           } catch (t: Throwable) {
             Log.e(TAG, "slowmo start failed", t)

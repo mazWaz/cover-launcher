@@ -1383,15 +1383,42 @@ class CameraEngine(private val ctx: Context) {
   fun stopRecording() {
     try { recorder?.stop() } catch (t: Throwable) { Log.w(TAG, "recorder stop", t) }
     stopRecordingSafe()
-    state = state.copy(recording = false, recordingPaused = false, status = "video saved")
+    val empty = dropIfEmptyTake()
+    state = state.copy(
+      recording = false,
+      recordingPaused = false,
+      status = if (empty) "slowmo gagal: kamera tidak mengirim frame" else "video saved",
+    )
     closeDevice()
     openCurrent()
   }
 
+  /**
+   * A slow-motion take that never received frames still leaves a MediaStore row and a few KB of
+   * container behind. Removes it and reports the failure instead of shipping a 0x0 video.
+   */
+  private fun dropIfEmptyTake(): Boolean {
+    val uri = slowMotionUri ?: return false
+    slowMotionUri = null
+    val size = runCatching {
+      ctx.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize }
+    }.getOrNull() ?: return false
+    if (size >= MIN_VALID_VIDEO_BYTES) return false
+    runCatching { ctx.contentResolver.delete(uri, null, null) }
+      .onFailure { Log.w(TAG, "empty take cleanup failed", it) }
+    Log.w(TAG, "slow motion produced $size bytes - deleted")
+    return true
+  }
+
   // ---------------------------------------------------------------- slow motion
 
+  private var slowMotionUri: android.net.Uri? = null
   private var hsSize: Size? = null
   private var hsFps = 0
+
+  /** High-speed configuration the UI must mirror for its preview surface. */
+  val slowMotionSize: Size? get() = hsSize
+  val slowMotionFps: Int get() = hsFps
 
   /** Picks the best high-speed configuration the HAL advertises for this camera. */
   private fun probeHighSpeed(ch: CameraCharacteristics) {
@@ -1404,10 +1431,17 @@ class CameraEngine(private val ctx: Context) {
     hsFps = hsSize?.let { s ->
       map.getHighSpeedVideoFpsRangesFor(s)?.maxOfOrNull { it.upper } ?: 0
     } ?: 0
+
     Log.i(TAG, "highSpeed size=" + hsSize + " fps=" + hsFps)
   }
 
   fun startSlowMotion(): Boolean {
+    // The front sensor advertises 1080p@120 (and 720p@120) yet its HAL never delivers frames to
+    // the recorder - every take ends as a 0x0 video track. Refuse instead of writing a broken file.
+    if (!state.facingBack) {
+      state = state.copy(status = "slowmo tidak didukung kamera depan")
+      return false
+    }
     val cam = device ?: return false
     val hs = hsSize ?: return false
     if (hsFps <= 0) return false
@@ -1420,6 +1454,7 @@ class CameraEngine(private val ctx: Context) {
         put(MediaStore.Video.Media.RELATIVE_PATH, "DCIM/CoverCam")
       }
       val uri = ctx.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: return false
+      slowMotionUri = uri
       val pfd = ctx.contentResolver.openFileDescriptor(uri, "w") ?: return false
 
       val rec = MediaRecorder(ctx)
@@ -1727,5 +1762,6 @@ class CameraEngine(private val ctx: Context) {
     private const val HDR_FRAMES = 3
     private const val PANO_TARGET = 3
     private const val SHIFT = 6
+    private const val MIN_VALID_VIDEO_BYTES = 100_000L
   }
 }

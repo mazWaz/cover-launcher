@@ -113,7 +113,10 @@ fun CameraScreen(
       AndroidView(
         factory = { c ->
           android.view.SurfaceView(c).apply {
-            holder.setFixedSize(1280, 720)
+            // The high-speed session only accepts surfaces from the published size list, and some
+            // HALs (the front camera here) silently drop video frames when the preview size differs
+            // from the recorder size. Mirror the recorder exactly.
+            holder.setFixedSize(state.slowPreviewWidth, state.slowPreviewHeight)
             holder.addCallback(object : android.view.SurfaceHolder.Callback {
               override fun surfaceCreated(h: android.view.SurfaceHolder) {
                 onAction(CameraAction.AttachSlowPreview(h.surface))

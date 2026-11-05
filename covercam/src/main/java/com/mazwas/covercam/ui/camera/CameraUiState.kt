@@ -37,6 +37,9 @@ data class CameraUiState(
   val manual: Boolean = false,
   val lastThumb: Uri? = null,
   val zoom: Float = 1f,
+  val slowPreviewWidth: Int = 1280,
+  val slowPreviewHeight: Int = 720,
+  val slowPreviewFps: Int = 0,
   val previewRotationDegrees: Int = 0,
   val previewMirrored: Boolean = false,
 

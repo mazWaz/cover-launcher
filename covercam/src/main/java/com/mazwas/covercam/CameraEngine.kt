@@ -640,7 +640,14 @@ class CameraEngine(private val ctx: Context) {
     val still = reader?.surface ?: rawReader?.surface
     if (preview == null || still == null) return
     try {
-      cam.createCaptureSession(listOf(preview, still), object : CameraCaptureSession.StateCallback() {
+      val config = android.hardware.camera2.params.SessionConfiguration(
+        android.hardware.camera2.params.SessionConfiguration.SESSION_REGULAR,
+        listOf(
+          android.hardware.camera2.params.OutputConfiguration(preview),
+          android.hardware.camera2.params.OutputConfiguration(still),
+        ),
+        java.util.concurrent.Executor { r -> handler.post(r) },
+        object : CameraCaptureSession.StateCallback() {
         override fun onConfigured(s: CameraCaptureSession) {
           session = s
           try { s.setRepeatingRequest(buildPreviewRequest(cam), aeCallback, handler) } catch (t: Throwable) {
@@ -655,7 +662,9 @@ class CameraEngine(private val ctx: Context) {
         override fun onConfigureFailed(s: CameraCaptureSession) {
           state = state.copy(status = "session config failed")
         }
-      }, handler)
+      },
+      )
+      cam.createCaptureSession(config)
     } catch (t: Throwable) {
       Log.e(TAG, "session failed", t)
       state = state.copy(status = "session failed: ${t.message}")
@@ -989,35 +998,8 @@ class CameraEngine(private val ctx: Context) {
   }
 
   /** Searches for the overlap width (in pixels) that best matches two frames. */
-  private fun bestOverlap(a: IntArray, b: IntArray, w: Int, h: Int): Int {
-    var best = w / 3
-    var bestScore = Long.MAX_VALUE
-    var o = w / 4
-    while (o < (w * 3) / 4) {
-      var sad = 0L
-      var count = 0
-      var y = 8
-      while (y < h - 8) {
-        var x = 0
-        while (x < o) {
-          val d = a[y * w + (w - o + x)] - b[y * w + x]
-          sad += if (d < 0) -d else d
-          count++
-          x += 8
-        }
-        y += 8
-      }
-      if (count > 0) {
-        val score = sad / count
-        if (score < bestScore) {
-          bestScore = score
-          best = o
-        }
-      }
-      o += 8
-    }
-    return best
-  }
+  private fun bestOverlap(a: IntArray, b: IntArray, w: Int, h: Int): Int =
+    Align.bestOverlap(a, b, w, h)
 
   private fun saveBytes(bytes: ByteArray, kind: String, exifDegrees: Int? = null) {
     try {
@@ -1321,7 +1303,11 @@ class CameraEngine(private val ctx: Context) {
         override fun onOpened(cam: CameraDevice) {
           device = cam
           val surfaces = listOfNotNull(preview, recorderSurface)
-          cam.createCaptureSession(surfaces, object : CameraCaptureSession.StateCallback() {
+          val config = android.hardware.camera2.params.SessionConfiguration(
+            android.hardware.camera2.params.SessionConfiguration.SESSION_REGULAR,
+            surfaces.map { android.hardware.camera2.params.OutputConfiguration(it) },
+            java.util.concurrent.Executor { r -> handler.post(r) },
+            object : CameraCaptureSession.StateCallback() {
             override fun onConfigured(s: CameraCaptureSession) {
               session = s
               val b = cam.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
@@ -1340,7 +1326,9 @@ class CameraEngine(private val ctx: Context) {
             override fun onConfigureFailed(s: CameraCaptureSession) {
               state = state.copy(status = "video session failed")
             }
-          }, handler)
+          },
+          )
+          cam.createCaptureSession(config)
         }
         override fun onDisconnected(cam: CameraDevice) { cam.close() }
         override fun onError(cam: CameraDevice, error: Int) {
@@ -1634,44 +1622,14 @@ class CameraEngine(private val ctx: Context) {
   }
 
   private fun grayOf(bmp: Bitmap): IntArray {
-    val w = bmp.width
-    val h = bmp.height
-    val px = IntArray(w * h)
-    bmp.getPixels(px, 0, w, 0, 0, w, h)
-    val g = IntArray(w * h)
-    for (i in px.indices) {
-      val c = px[i]
-      g[i] = ((c shr 16 and 0xFF) * 77 + (c shr 8 and 0xFF) * 150 + (c and 0xFF) * 29) shr 8
-    }
-    return g
+    val px = IntArray(bmp.width * bmp.height)
+    bmp.getPixels(px, 0, bmp.width, 0, 0, bmp.width, bmp.height)
+    return Align.toGray(px)
   }
 
   /** Coarse translation search (+/- SHIFT) on a subsampled grid; returns dx, dy. */
-  private fun estimateShift(ref: IntArray, cur: IntArray, w: Int, h: Int): Pair<Int, Int> {
-    var bestDx = 0
-    var bestDy = 0
-    var best = Long.MAX_VALUE
-    for (dy in -SHIFT..SHIFT) {
-      for (dx in -SHIFT..SHIFT) {
-        var sad = 0L
-        var count = 0
-        var y = SHIFT
-        while (y < h - SHIFT) {
-          val ry = y + dy
-          var x = SHIFT
-          while (x < w - SHIFT) {
-            val d = ref[y * w + x] - cur[ry * w + (x + dx)]
-            sad += if (d < 0) -d else d
-            count++
-            x += 16
-          }
-          y += 16
-        }
-        if (count > 0 && sad / count < best) { best = sad / count; bestDx = dx; bestDy = dy }
-      }
-    }
-    return bestDx to bestDy
-  }
+  private fun estimateShift(ref: IntArray, cur: IntArray, w: Int, h: Int): Pair<Int, Int> =
+    Align.estimateShift(ref, cur, w, h)
 
   private fun shiftBitmap(bmp: Bitmap, dx: Int, dy: Int): Bitmap {
     val out = Bitmap.createBitmap(bmp.width, bmp.height, Bitmap.Config.ARGB_8888)

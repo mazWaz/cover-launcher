@@ -12,7 +12,7 @@ Karena itu tidak perlu root, tidak perlu MultiStar, dan tidak ada allowlist apli
 
 | Bagian | Kelas | Peran |
 |---|---|---|
-| `App` | `App.kt` | start Koin, pasang listener binder Shizuku → `Grants.apply()` |
+| `App` | `App.kt` | start Koin; saat binder Shizuku datang: minta izin Shizuku bila belum ada, lalu `Grants.apply()` (juga begitu izin diberikan) |
 | Izin | `feature/cover/Grants.kt` | 5 perubahan sistem: state lipat, overlay appop, listener notifikasi, DND, accessibility |
 | Home takeover | `feature/cover/CoverService.kt` | accessibility service: timpa cover home, tarik app dari layar mati, orkestrasi autostart Shizuku |
 | Autostart | `feature/cover/ShizukuAutoStart.kt` | sekali per boot: buka Shizuku dan tekan Start |
@@ -59,6 +59,7 @@ Balik ke normal: `adb shell "pkill -f coverlauncher-fold; cmd device_state state
 | `com.android.systemui.qp.flashlight.SubroomFlashLightSettingsActivity` | `GLOBAL_ACTION_BACK` (Samsung membuka layarnya tiap torch menyala) |
 | window Shizuku saat autostart berjalan | state machine `Opened → Pressing → Pressed → Starting → Idle` |
 | package lain muncul di display 0 selagi display 0 `STATE_OFF` | `pullToCover()` |
+| `UsbDebuggingActivity` / `WifiDebuggingActivity` (SystemUI) di display 0 | `pullToCover()` juga: dialog asli (sidik jari kunci, "Always allow") pindah ke cover dan **dijawab pengguna**, tidak pernah ditekan otomatis — dialog itulah yang mencegah komputer asing mendapat shell. Task-nya sendiri (`taskAffinity=com.android.systemui.usb`), bukan home. Belum diuji dengan dialog asli. |
 
 `coverOptions()` = `ActivityOptions.setLaunchDisplayId(1)` +
 `MODE_BACKGROUND_ACTIVITY_START_ALLOWED`; start dari background sah karena appop overlay.
@@ -71,8 +72,9 @@ menghidupkannya lagi (bound a11y service) tepat saat Shizuku mengirim binder.
 
 Start-on-boot milik Shizuku gagal di One UI 9 — ia menemukan wireless debugging lalu tidak pernah konek.
 `ShizukuAutoStart` mengambil alih: setelah uptime 90 s (start-on-boot Shizuku selesai ~65 s), **sekali per
-boot** (dibandingkan dengan `Settings.Global.BOOT_COUNT`), `LauncherActivity.onResume` membuka Shizuku di
-cover. Lalu `CoverService` mencari `CardView` berisi teks "Wireless debugging" dan menekan tombol "Start"
+boot** (dibandingkan dengan `Settings.Global.BOOT_COUNT`), `LauncherActivity` membuka Shizuku di cover — 5 s
+setelah `onResume` dan hanya bila launcher masih di depan, karena binder Shizuku baru sampai sesaat setelah proses
+start (tanpa jeda ini, pemasangan pertama membuka Shizuku padahal server-nya hidup). Lalu `CoverService` mencari `CardView` berisi teks "Wireless debugging" dan menekan tombol "Start"
 di dalamnya; kembali ke launcher saat `MainActivity` muncul lagi (server sudah hidup).
 
 Batasannya: bergantung pada UI Inggris Shizuku ("Start via Wireless debugging" / "Start"). Shizuku 13.6 punya

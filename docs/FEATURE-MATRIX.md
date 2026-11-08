@@ -25,7 +25,7 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 | Hidup lagi setelah boot/update | `BootReceiver` (`BOOT_COMPLETED` + `MY_PACKAGE_REPLACED`) → `startForegroundService` | Andalkan accessibility service + binder Shizuku |
 | Melawan Samsung yang menimpa state lipat | `Fold.kt`: watcher shell membaca logcat `DeviceStateManagerService`, minta ulang state `1` (TENT) saat "Committing state" 0\|3 | Penjaga shell `coverlauncher-fold`: logcat `onStateChanged` → `state 0` lagi (override hilang tiap HP dilipat) |
 | Start activity dari background (Android 15+) | Overlay 1×1 di display 1 (`BAL_BLOCK` tidak berlaku) + `KeepAwake` | Appop `SYSTEM_ALERT_WINDOW` + a11y |
-| Dialog "Allow USB debugging?" di layar mati | Tombol di Settings: a11y menekan **Allow** pada dialog itu | Tidak ada (harus lewat scrcpy/layar luar) |
+| Dialog "Allow USB debugging?" di layar mati | Tombol di Settings: a11y menekan **Allow** pada dialog itu | Dialog aslinya dipindah ke cover (`pullToCover`), pengguna menjawab sendiri; belum diuji dengan dialog asli |
 | Scope a11y | Dinamis: `FLAG_RETRIEVE_INTERACTIVE_WINDOWS` hanya saat top-edge/lock/nav, `FLAG_INPUT_METHOD_EDITOR` saat mengetik | Statis, semua window |
 | Activity sendiri tampil di cover | meta-data `com.samsung.android.multiwindow.show_on_cover=true` | Tidak dipakai (semua lewat shell) |
 | Shizuku hidup setelah reboot | Manual (Start tiap boot) | **Otomatis** ±90 s (tekan Start lewat a11y) |
@@ -133,7 +133,7 @@ Catatan: desktop di monitor tetap berguna walau panel dalam mati — output-nya 
 | Layar "Setup & permissions" (daftar apa yang kurang + tombol) | Ya | Sebagian: tiga indikator (Shizuku, notifikasi, cover service) + "Fix permissions" |
 | Banking apps picker (a11y berhenti saat app itu dibuka) | Ya + `WRITE_SECURE_SETTINGS` untuk menyalakan lagi | Tidak |
 | Buka widget cover Samsung | Ya | Tidak |
-| Approve debugging prompt | Ya | Tidak |
+| Approve debugging prompt | Ya | Ya, dialog dipindah ke cover (belum diuji) |
 | Experimental: desktop, keyboard, internet calls | Ya | Tidak ada bagian eksperimental |
 
 ## Yang kita punya dan OpenCover tidak

@@ -123,8 +123,9 @@ get-allowed-network-types-for-users -s 0` → `No valid subscription found`, jad
 1. ~~**Aksi notifikasi**~~ — **selesai**: maks 3 tombol, Balas membuka app, notifikasi panggilan tanpa tombol
    (Answer dari listener tidak pernah membuat panggilan WA aktif di HP ini).
 2. **Media player** — tab di panel, `MediaSessionManager` menumpang izin yang ada. ±200 LOC termasuk UI.
-3. **Allowlist cover + approve dialog debugging** — tulis `multistar_setting_repository` (slot 26) dan tombol
-   a11y untuk dialog `Allow`; setelah ini membuka app tidak lagi bergantung pada Shizuku.
+3. **Allowlist cover** — tulis `multistar_setting_repository` (slot 26); setelah ini membuka app tidak lagi
+   bergantung pada Shizuku. ~~Approve dialog debugging~~ **selesai dengan cara lain**: dialog asli dipindah ke cover
+   dan dijawab pengguna (bukan a11y menekan Allow); belum diuji dengan dialog asli.
 4. **Tile lengkap + brightness + reorder** — 6 tile baru, slider `sub_screen_brightness`, urutan di `SettingsStore`.
 5. **Density/font/rotasi** — `wm density -d 1`, `cmd window user-rotation -d 1 lock N`, disimpan per paket.
 6. **Keep-awake overlay + foreground service + boot receiver** — menutup risiko BAL dan membuat app menyala

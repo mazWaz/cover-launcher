@@ -24,6 +24,8 @@ Nothing-inspired design: OLED black, monochrome, dot-matrix clock.
 - **Every app opens on the cover**: apps are started on display 1 through Shizuku, which skips Samsung's
   "Open your phone to continue" screen. Apps that still open on the dead main screen are moved to the cover.
 - **Always the cover home**: whenever Samsung's cover home (clock/widgets) would show, the launcher comes back.
+- **Debugging prompts on the cover**: Android's "Allow USB debugging?" / "Allow wireless debugging?" prompts open on
+  the dead main screen; they are moved to the cover so you answer them yourself (never answered for you).
 - **Custom wallpaper** with an optional dot-matrix filter, mono or color icons.
 - No internet permission: nothing leaves the phone.
 
@@ -140,6 +142,7 @@ Shizuku has to be running for apps to open on the cover.
 | No notifications in the panel | Settings → **Fix permissions**. |
 | Cover wakes to Samsung's clock instead of the launcher | Check *Settings → Accessibility → Installed apps → Cover Launcher* is on, or tap **Fix permissions**. |
 | Cover stuck on a half-transparent lock clock right after a One UI update | Samsung's post-update intro is waiting on the (dead) main screen and blocks the cover. Turn the main display on with `adb shell cmd device_state state 3`, finish the intro there (blind taps, or mirrored with [scrcpy](https://github.com/Genymobile/scrcpy) `--display-id 0`), then `adb shell cmd device_state state 0`. |
+| A new computer shows the phone as `unauthorized` | The "Allow USB debugging?" prompt should be on the cover: unlock it and answer. Not there: Shizuku must be running to move it; unplugging the cable dismisses it. |
 | Main screen should work again | `adb shell "pkill -f coverlauncher-fold; cmd device_state state reset"` |
 
 ## Uninstall

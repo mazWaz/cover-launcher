@@ -22,8 +22,13 @@ Sideloaded on one phone; follows the mazWaz/android-skill conventions.
 - Anything drawn over the lock (pop-up, AOD) must follow the lock-screen notification settings: see `lockedView()`.
 - Camera cutout: bottom-right `Rect(379,654-748,720)` px. Keep tappable UI above 308 dp, or in the left half of the bottom strip.
   It turns with the cover (right at 90°, top at 180°, left at 270°): screens use `Modifier.cutoutSides()` for those.
-- Cover rotation: Android's auto-rotation never turns the cover. `CoverRotation` sets `cmd window user-rotation -d 1
-  lock N` (fixed-to-user-rotation enabled) from Samsung's orientation sensor (type 27) or per upside-down app.
+- Cover rotation: Android's auto-rotation never turns the cover. `CoverDisplay` sets `cmd window user-rotation -d 1
+  lock N` (fixed-to-user-rotation enabled) from Samsung's orientation sensor (type 27) or the front app's own rotation,
+  and `wm density N -d 1` for its density. Samsung's compat sandbox (most cover apps: WhatsApp, Mobile Legends;
+  `mCompatSandboxScale`) ignores display density; font scale reaches it.
+- Banking mode: banking apps refuse to run beside an accessibility service. `Grants.bankingMode` takes CoverService
+  off before such an app opens; a shell watcher (`coverlauncher-bank`) puts it back once the app leaves. Everything
+  CoverService does (cover home takeover, pop-up, AOD, rotation, keep awake) pauses meanwhile.
 - Grants (overlay appop, notification listener, accessibility service, fold state) are re-applied through Shizuku in `App.kt`.
 - Samsung's cover pop-ups: `system edge_lighting` (brief pill) and `secure cover_screen_show_notification` (detailed
   card); `global heads_up_notifications_enabled` does nothing on the cover. adb test notifications never pop up

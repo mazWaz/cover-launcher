@@ -3,7 +3,7 @@
 Pembanding: [Shmubbier/OpenCover](https://github.com/Shmubbier/OpenCover) (GPL-3.0) — launcher FOSS untuk
 cover Z Flip5. Analisis di bawah dari **source**, bukan README: commit `1fb97ca` (2026-11-06, sesudah tag
 `v0.2`), 116 file Kotlin di `app/src/main`, 13.765 LOC, 18 paket fitur (+ `ui/`), 39 file unit test.
-Repo ini ±2.550 LOC (modul `app`, tanpa test).
+Repo ini ±4.100 baris (38 file Kotlin, modul `app`, tanpa test).
 
 Angka LOC di tabel = ukuran paketnya di OpenCover, patokan kasar biaya fitur itu — bukan biaya kita.
 
@@ -20,7 +20,7 @@ Status perangkat: `com.mazwas.coverlauncher` belum terpasang; yang jalan `dev.op
 | Relevan untuk HP panel-mati | ±1.788 LOC: `notify/` 430, `quick/` 409, `media/` 215, `edge/` 216, `phone/{DisplayTweaks,Rotation,RotationFeature,AppDensity,PhonePrefs}` 335, `watcher/{KeepAwake,BankingMode,BankingRules}` 183 |
 | Tiga prioritas (aksi notifikasi, media, tile+brightness) | ±700 LOC |
 | Sengaja tidak diambil | `mirror/` 858, `keyboard/` 721, `lock/` 555, `nav/` 525, `call/` 448, `home/`+`layout/`+`widgets/`+`look/` ±1.100 |
-| Repo ini sebagai pembanding | ±2.550 LOC (modul `app`, tanpa test) |
+| Repo ini sebagai pembanding | ±4.100 baris (modul `app`, tanpa test) |
 | Mekanisme inti yang belum ada | daftar app ke cover lewat MultiStar (`multistar_setting_repository`), foreground service + boot receiver, overlay 1×1 (BAL/keep-awake), tombol approve dialog debugging |
 
 Artinya selisih fungsionalnya kecil: yang hilang dari cover-launcher adalah lapisan pemakaian
@@ -130,14 +130,16 @@ get-allowed-network-types-for-users -s 0` → `No valid subscription found`, jad
    dan dijawab pengguna (bukan a11y menekan Allow); belum diuji dengan dialog asli.
 4. **Tile lengkap + reorder** — **sebagian selesai**: NFC, dark mode, keep awake, rotate/locked (sensor orientasi
    dibaca sendiri, auto-rotation Android tidak memutar cover); panel ringkas 5 tile, usap bawah = semua. Hotspot ditunda
-   (tanpa SIM). Belum: mirror, urutan di `SettingsStore`. ~~Slider brightness~~ **selesai**:
+   (tanpa SIM). ~~Urutan~~ **selesai**: Settings → *tiles* (↑ ↓, on/off). Belum: mirror. ~~Slider brightness~~ **selesai**:
    `sub_screen_brightness` + mode otomatis (terbukti di HP: mode 0 + nilai 20 meredupkan cover).
-5. **Density/font/rotasi** — `wm density -d 1`, `cmd window user-rotation -d 1 lock N`, disimpan per paket.
-   Rotasi **sebagian selesai**: per paket hanya terbalik 180° (drawer → *upside down*, untuk tombol game di bawah
-   kamera). Belum: 90°/270° per paket, density, font.
+5. ~~**Density/font/rotasi**~~ **selesai**: per paket rotasi 0°/90°/180°/270° dan density (`CoverDisplay`, disimpan
+   `paket=nilai`), global density/font/animasi (Settings → *display*). Density tidak menjangkau app di compat sandbox
+   Samsung (WhatsApp, Mobile Legends); font menjangkau.
 6. **Keep-awake overlay + foreground service + boot receiver** — menutup risiko BAL dan membuat app menyala
-   lagi setelah reboot maupun update APK.
-7. **Edge lighting / banking step-aside** — kecil, kerjakan kalau salah satunya mengganggu.
+   lagi setelah reboot maupun update APK. **Sebagian**: keep awake sudah (tile, overlay a11y); `UpdateReceiver`
+   (`MY_PACKAGE_REPLACED`) membuat app menyala lagi setelah update; boot ditangani a11y service. Tanpa FGS.
+7. **Edge lighting** — kecil, kerjakan kalau mengganggu. ~~Banking step-aside~~ **selesai**: banking mode
+   ([HOW-IT-WORKS](HOW-IT-WORKS.md) §12).
 8. **Balas teks** — baru setelah ada keyboard yang bisa hidup di cover (±700 LOC IME).
 9. **Desktop di monitor** — opsional, hanya kalau ada monitor USB-C; 1.451 LOC di OpenCover.
 
@@ -148,7 +150,8 @@ tanpa perubahan arsitektur (kecuali baris izin `WRITE_SECURE_SETTINGS` dan satu 
 
 Mirror layar dalam dan resize layar dalam (tidak ada gunanya tanpa panel dalam); lock screen sendiri
 (Samsung sudah punya, overlay di atas keyguard menambah jalur rawan; AOD sendiri akhirnya diambil, lihat
-[HOW-IT-WORKS](HOW-IT-WORKS.md) §11); layar panggilan sendiri (layar WhatsApp sendiri sudah jalan di cover); widget home, icon pack, wallpaper
+[HOW-IT-WORKS](HOW-IT-WORKS.md) §11); layar panggilan sendiri (layar WhatsApp sendiri sudah jalan di cover); widget home (dicoba 2026-11-08 sebagai
+halaman widget Android di samping jam, lalu dibuang pengguna: tidak berguna di cover), icon pack, wallpaper
 animasi (kosmetik, bertabrakan dengan gaya monokrom); nav bar sendiri (nav bar Samsung sudah jalan).
 
 Desktop di monitor USB-C **tidak** masuk daftar buang: panel dalam tidak dipakai, dan dengan monitor

@@ -67,19 +67,20 @@ Semua perintah di bawah dijalankan dari komputer. Format keluaran di kolom kanan
 | Listener notifikasi | `adb shell settings get secure enabled_notification_listeners` | mengandung `com.mazwas.coverlauncher/com.mazwas.coverlauncher.feature.launcher.data.NotificationListener` |
 | Daftar cover MultiStar terisi | `adb shell "settings get secure multistar_setting_repository" \| cut -d/ -f26 \| tr ';' '\n' \| wc -l` | ≥ jumlah app di drawer |
 | Notifikasi benar-benar masuk | `adb shell cmd notification list \| head` | ada baris notifikasi aktif |
-| Shizuku siap | buka launcher → long-press home → **Shizuku: ready** | `ready` |
-| Cover service | layar Settings yang sama → **cover service** | `on` |
+| Semua kebutuhan | buka launcher → long-press home → bagian **system** | setiap baris `ok` (Shizuku, notifications, cover service, overlay, do not disturb, fold keeper, sleeps while charging, dan setelan Samsung bila pop-up/AOD kita aktif) |
 | Cover home ditimpa | tekan Home/Back di cover sampai ke jam Samsung | launcher kembali sendiri |
 | App terbuka di cover | buka app dari dock | muncul di cover, bukan di layar mati |
 | Pop-up Samsung mati (hanya bila Settings → pop-ups: *ours*) | `adb shell "settings get system edge_lighting; settings get secure cover_screen_show_notification"` | `0` dan `0` (pilihan *samsung*: `1` dan `1`) |
-| Rotasi cover | `adb shell "cmd window fixed-to-user-rotation -d 1; cmd window user-rotation -d 1"` | `enabled` lalu `lock N`; app *upside down* di depan → `lock 2` |
+| Rotasi cover | `adb shell "cmd window fixed-to-user-rotation -d 1; cmd window user-rotation -d 1"` | `enabled` lalu `lock N`; app dengan *rotate 180°* (drawer) di depan → `lock 2` |
+| Density cover | `adb shell wm density -d 1` | `Physical density: 320`, plus `Override density: N` bila Settings → density atau density app di depan bukan 320 |
+| Banking mode (app ber-*banking mode* dibuka dari launcher) | `adb shell "settings get secure enabled_accessibility_services; settings get secure accessibility_enabled; pgrep -f '[c]overlauncher-bank'"` | selama app itu di depan: tanpa CoverService, `0` (bila tak ada service lain), satu pid; sesudah keluar: CoverService kembali, `1`, tanpa pid |
 | Pop-up launcher | minta orang lain mengirim pesan (notifikasi tes adb tidak pernah pop-up) | kartu di atas cover ±5 s, tanpa pil/kartu Samsung; saat AOD tidak muncul |
 | Kunci PIN dihormati | matikan lalu bangunkan cover | layar kunci Samsung (`mCurrentFocus=SubScreenLockWindow`), bukan launcher; launcher baru setelah PIN |
 | AOD sendiri (hanya bila Settings → aod: *ours*) | `adb shell "settings get system aod_mode; settings get system aod_tap_to_show_mode"` lalu matikan cover | `1` dan `0`; cover doze menampilkan jam titik launcher |
 | Cover mati sendiri | `adb shell settings get global stay_on_while_plugged_in` | `0` (selain 0, cover tidak mati selama dicas) |
 
-Kalau satu baris gagal: jalankan **Fix permissions** di Settings launcher (menjalankan ulang `Grants.apply()`),
-setelah memastikan Shizuku `ready`.
+Kalau satu baris gagal: tekan **Fix** di Settings → system (menjalankan ulang `Grants.apply()` plus setelan Samsung
+untuk pop-up/AOD kita), setelah memastikan baris *shizuku* `ok`.
 
 ## 6. Setelah reboot
 
@@ -92,12 +93,13 @@ Yang bisa gagal dan penanganannya:
 |---|---|---|
 | Shizuku tetap `off` | UI Shizuku bukan bahasa Inggris, atau pairing wireless debugging hilang | buka Shizuku, Start manual; pairing ulang bila perlu |
 | Apps balik ke "Open your phone" | Shizuku belum hidup | Start Shizuku, buka app lagi |
-| Cover bangun ke jam Samsung | accessibility service mati, atau aktif tapi macet "binding" setelah update (`adb shell dumpsys accessibility \| grep -E "Bound services\|Binding services"`) | Launcher memulihkannya sendiri ±5 s setelah Shizuku tersambung; manual: Settings → Fix permissions, atau keluarkan lalu masukkan lagi service-nya di `enabled_accessibility_services` |
-| Layar utama menyala saat HP dibuka | penjaga lipat tidak jalan (Shizuku belum hidup saat `Grants` jalan) | Start Shizuku lalu Settings → Fix permissions; darurat: `adb shell cmd device_state state 0` |
+| Cover bangun ke jam Samsung | accessibility service mati, atau aktif tapi macet "binding" setelah update (`adb shell dumpsys accessibility \| grep -E "Bound services\|Binding services"`) | Launcher memulihkannya sendiri ±5 s setelah Shizuku tersambung; manual: Settings → system → Fix, atau keluarkan lalu masukkan lagi service-nya di `enabled_accessibility_services` |
+| Layar utama menyala saat HP dibuka | penjaga lipat tidak jalan (Shizuku belum hidup saat `Grants` jalan) | Start Shizuku lalu Settings → system → Fix; darurat: `adb shell cmd device_state state 0` |
 
 ## 7. Mundur
 
 ```sh
+adb shell pkill -f coverlauncher-bank       # hanya bila app bank sedang terbuka: watcher banking mode, juga shell
 adb uninstall com.mazwas.coverlauncher
 adb shell pkill -f coverlauncher-fold       # penjaga lipat jalan sebagai shell: TIDAK ikut hilang saat uninstall
 adb shell cmd device_state state reset      # kembalikan layar utama
@@ -107,6 +109,11 @@ adb shell 'settings put secure multistar_setting_repository "$(cat /data/local/t
 adb shell "settings put system edge_lighting 1; settings put secure cover_screen_show_notification 1"
 # cover tetap di rotasi terakhir: tegakkan
 adb shell cmd window user-rotation -d 1 lock 0
+# hanya bila density, font atau animasi pernah diubah
+adb shell "wm density reset -d 1; settings put system font_scale 1.0"
+adb shell "settings put global window_animation_scale 1; settings put global transition_animation_scale 1; settings put global animator_duration_scale 1"
+# hanya untuk app yang pernah di-set background: restricted
+adb shell "cmd appops set <paket> RUN_ANY_IN_BACKGROUND allow; am set-standby-bucket <paket> active"
 ```
 
 Memilih pop-ups *samsung* di Settings sebelum uninstall sudah melakukan baris terakhir.

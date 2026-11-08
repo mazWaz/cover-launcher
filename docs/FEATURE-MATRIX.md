@@ -77,16 +77,16 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 |---|---|---|
 | Tile | 15: Wi-Fi, BT, senter, Rotate, sound, DND, saver, location, data, airplane, NFC, dark mode, keep awake, mirror, hotspot | 13: Wi-Fi, BT, data, senter, DND, airplane, sound, location, saver, NFC, dark mode, keep awake, rotate/locked (5 tampil, usap bawah = semua) |
 | Brightness cover | Slider (`system/sub_screen_brightness`, 1..255, Shizuku) | Ya: slider + AUTO (`…_mode`), lewat Shizuku |
-| Susun tile | Drag & drop, tambah/hapus, urutan disimpan | Tidak |
+| Susun tile | Drag & drop, tambah/hapus, urutan disimpan | Ya, tanpa drag: Settings → *tiles* ↑ ↓ dan on/off, disimpan (`tiles`, `hidden_tiles`) |
 | Long-press tile | Halaman/popup sistem | Ya (Wi-Fi, internet, volume, halaman settings) |
 
 ## G. Display & orientasi
 
 | Fitur | OpenCover | Kita |
 |---|---|---|
-| Rotasi per app | Ya (`cmd window user-rotation -d 1 lock N` + `fixed-to-user-rotation`) | Sebagian: hanya terbalik 180° per app (drawer → *upside down*), plus tile rotate dari sensor orientasi |
-| Density per app | Ya (preset 300/260/220/400 dpi) | Tidak |
-| Density/font/animation global | Ya | Tidak |
+| Rotasi per app | Ya (`cmd window user-rotation -d 1 lock N` + `fixed-to-user-rotation`) | Ya: drawer → *rotate* default/0°/90°/180°/270° (perintah sama), plus tile rotate dari sensor orientasi |
+| Density per app | Ya (preset 300/260/220/400 dpi) | Ya: drawer → *density* 240/280/360/400 (`wm density N -d 1`). App di compat sandbox Samsung (WhatsApp, Mobile Legends) tidak berubah; Chrome berubah (terukur 2026-11-08) |
+| Density/font/animation global | Ya | Ya: Settings → *display*: density 280/320/360, font 0,9/1/1,15×, animasi off/0,5/1× |
 | Ukuran/font layar dalam | Untuk mirror saja | Tidak (tidak relevan) |
 
 ## H. Lock screen, AOD, panggilan
@@ -105,8 +105,8 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 |---|---|---|
 | Deep sleep dipaksa saat idle | Ya (`dumpsys deviceidle force-idle deep` lewat Shizuku; sensor gerak mati = tidak pernah doze sendiri) | Tidak |
 | 5G on/off | Ya (`cmd phone get/set-allowed-network-types-for-users -s 0`) | Tidak |
-| Restrict app di background | Ya (`cmd appops RUN_ANY_IN_BACKGROUND ignore` + `am set-standby-bucket restricted`) | Tidak |
-| Heat guard (42 °C peringatan, 45 °C matikan hotspot/mirror) | Ya, jalan di FGS | Tidak |
+| Restrict app di background | Ya (`cmd appops RUN_ANY_IN_BACKGROUND ignore` + `am set-standby-bucket restricted`) | Ya: drawer → *background: restricted*, perintah sama (belum diuji di HP) |
+| Heat guard (42 °C peringatan, 45 °C matikan hotspot/mirror) | Ya, jalan di FGS | Ya, di a11y service: 42 °C kartu + suhu merah di Home; 45 °C keep awake dan torch mati, cover redup 40/255 (terbukti dengan `dumpsys battery set temp`) |
 | Power saving Samsung mematikan AOD → notifikasi + tombol | Ya | Tidak |
 | Keep awake di app apa pun | Ya (overlay + `FLAG_KEEP_SCREEN_ON`) | Ya (tile; overlay a11y 1×1 di cover + `FLAG_KEEP_SCREEN_ON`) |
 | Location scanning / Google Location Accuracy | Ya | Tidak |
@@ -130,8 +130,8 @@ Catatan: desktop di monitor tetap berguna walau panel dalam mati — output-nya 
 
 | Fitur | OpenCover | Kita |
 |---|---|---|
-| Layar "Setup & permissions" (daftar apa yang kurang + tombol) | Ya | Sebagian: tiga indikator (Shizuku, notifikasi, cover service) + "Fix permissions" |
-| Banking apps picker (a11y berhenti saat app itu dibuka) | Ya + `WRITE_SECURE_SETTINGS` untuk menyalakan lagi | Tidak |
+| Layar "Setup & permissions" (daftar apa yang kurang + tombol) | Ya | Ya: Settings → *system*, tiap kebutuhan *ok/fix* (Shizuku, notifikasi, cover service, overlay, DND, fold keeper, stay awake, setelan Samsung untuk pop-up/AOD kita) + tombol *Fix* |
+| Banking apps picker (a11y berhenti saat app itu dibuka) | Ya + `WRITE_SECURE_SETTINGS` untuk menyalakan lagi | Ya: drawer → *banking mode*; a11y dimatikan lewat Shizuku sebelum app dibuka, watcher shell `coverlauncher-bank` menyalakan lagi (tanpa `WRITE_SECURE_SETTINGS`). Terbukti dengan Kalkulator sebagai pengganti; belum dengan app bank |
 | Buka widget cover Samsung | Ya | Tidak |
 | Approve debugging prompt | Ya | Ya, dialog dipindah ke cover (belum diuji) |
 | Experimental: desktop, keyboard, internet calls | Ya | Tidak ada bagian eksperimental |
@@ -151,9 +151,9 @@ Catatan: desktop di monitor tetap berguna walau panel dalam mati — output-nya 
 
 | | OpenCover | Kita |
 |---|---|---|
-| LOC | 13.765 (116 file) | ±2.550 (31 file) |
+| LOC | 13.765 (116 file) | ±4.100 baris (38 file) |
 | Paket fitur | 18 (+ `ui/`) | 3 (`cover`, `launcher`, `settings`) + modul `covercam` |
 | Unit test | 39 file | lihat `app/src/test` |
 | Izin manifest | 20 (INTERNET, NFC, VIBRATE, ANSWER_PHONE_CALLS, READ_PHONE_STATE, PACKAGE_USAGE_STATS, FGS×3, RECEIVE_BOOT_COMPLETED, WRITE_SECURE_SETTINGS, …) | 6 (SYSTEM_ALERT_WINDOW, QUERY_ALL_PACKAGES, REQUEST_DELETE_PACKAGES, ACCESS_WIFI_STATE, ACCESS_NETWORK_STATE, NFC) |
 | Service | FGS watcher + a11y + notification listener + mirror service | a11y + notification listener |
-| Receiver | boot/update | tidak ada |
+| Receiver | boot/update | update (`MY_PACKAGE_REPLACED`); boot ditangani a11y service |

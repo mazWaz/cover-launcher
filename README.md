@@ -15,7 +15,7 @@ Nothing-inspired design: OLED black, monochrome, dot-matrix clock.
 ## Features
 
 - **Home**: clock, date, alert count, battery/Wi-Fi/Bluetooth/DND status, an icon per app with alerts, a 4-app dock.
-- **App drawer**: every app A–Z, search, pin to dock, app info, uninstall.
+- **App drawer**: every app A–Z, search, pin to dock, per-app cover settings (below), app info, uninstall.
 - **Notification panel**: tap a notification to open it on the cover, swipe to dismiss, clear all, and up to three
   of its buttons (Mark as read, Archive…). Reply buttons open the app; calls get no buttons, tap opens the call screen.
 - **WhatsApp calls** work with WhatsApp's own call screen, which opens on the cover: answer, two-way audio, speaker.
@@ -33,14 +33,25 @@ Nothing-inspired design: OLED black, monochrome, dot-matrix clock.
   Wi-Fi, Bluetooth, mobile data, torch, Do Not Disturb, airplane mode, sound (ring → vibrate → mute), location,
   power saver, NFC, dark mode, keep awake (the cover stays on until you turn it off or press the power key),
   rotate (*rotate*: the cover follows how you hold the phone; *locked*: it stays the way it is turned now).
-  Long-press opens the matching system popup (Wi-Fi, internet, volume) or settings page.
+  Long-press opens the matching system popup (Wi-Fi, internet, volume) or settings page. Order and which ones show:
+  Settings → *tiles*.
 - **Media player** in the panel while something plays: title, artist, previous / play-pause / next (top session).
   Tap the title to open the app; that app's media notification is left out of the list while the player shows.
 - **Cover brightness** slider under the expanded toggles: dragging sets a manual level (auto brightness goes off), **AUTO**
   hands it back to Samsung's adaptive brightness. Needs Shizuku; hidden without it.
-- **Upside-down apps** (drawer → long-press → *upside down*): the cover turns 180° while that app is in front, so the
-  camera sits top left instead of bottom right. Made for games whose buttons land under the camera (Mobile Legends).
-  Screens keep clear of the camera whichever way the cover is turned.
+- **Per-app cover settings** (drawer → long-press an app; tap an entry to step through its values):
+  - *rotate* default/0°/90°/180°/270° while that app is in front. 180° puts the camera top left instead of bottom
+    right, for games whose buttons land under it (Mobile Legends). Screens keep clear of the camera whichever way the
+    cover is turned.
+  - *density* default/240/280/360/400 dpi while it is in front. Many cover apps (WhatsApp, Mobile Legends) run in
+    Samsung's compatibility sandbox and don't change; others (Chrome) do. The font size (Settings) reaches them all.
+  - *background* allowed/restricted: restricted apps can't run in the background.
+  - *banking mode* on/off: banking apps refuse to run while an accessibility service is on, so the launcher's turns
+    off before such an app opens and back on once you leave it. Meanwhile the launcher's pop-ups, AOD, per-app
+    rotation and keep awake pause, and Home briefly shows Samsung's cover home before the launcher.
+    Open these apps from the launcher: opened from a notification, the service turns off only once the app shows.
+- **Heat guard**: from 42 °C battery a card and a red temperature on Home; from 45 °C keep awake and the torch go off
+  and the cover dims.
 - **Every app opens on the cover**: apps are started on display 1 through Shizuku, which skips Samsung's
   "Open your phone to continue" screen. Apps that still open on the dead main screen are moved to the cover.
 - **Always the cover home**: whenever Samsung's cover home (clock/widgets) would show, the launcher comes back.
@@ -125,7 +136,7 @@ That's it. Lock and wake the cover: you should land on the launcher.
 | Home | long-press | settings |
 | Home | tap a dock icon | open the app |
 | Drawer | type + keyboard *Go* | open the first match |
-| Drawer | long-press an app | pin/unpin to dock, upside down/upright, app info, uninstall |
+| Drawer | long-press an app | pin/unpin to dock, rotate, density, background, banking mode, app info, uninstall |
 | Drawer | pull down at the top / Back | close |
 | Panel | tap a toggle | turn it on/off |
 | Panel | long-press a toggle | system popup / settings page |
@@ -148,11 +159,13 @@ Long-press the home screen.
 | **Dot filter** on/off | Renders the wallpaper as a dot-matrix pattern. |
 | **Icons** mono/color | Monochrome or original app icons. |
 | **AOD** ours/samsung | *Ours*: the launcher's AOD drawn over Samsung's while the cover sleeps. Needs Samsung's AOD on, "Always". |
+| **Density** 280/320/360 | The cover's dpi (320 is its own), for apps without their own (drawer). Needs Shizuku. |
+| **Font** 0.9×/1×/1.15× | Android's font size. Needs Shizuku. |
+| **Anim** off/0.5×/1× | Android's animation speed (window, transition, animator). Needs Shizuku. |
 | **Pop-ups** ours/samsung | *Ours*: the launcher's pop-up, Samsung's cover pop-ups off. *Samsung*: back to Samsung's. Needs Shizuku; shows "needs shizuku" without it. |
-| **Shizuku** ready/off | Whether the launcher can run shell commands. |
-| **Notifications** on/off | Whether notification access is granted. |
-| **Cover service** on/off | Whether the accessibility service that keeps the launcher the cover home is on. |
-| **Fix permissions** | Shown when something is off: re-applies every grant (needs Shizuku running). |
+| **Tiles** ↑ ↓ on/off | Order of the quick toggles (the first five show collapsed) and which show; *setup* stays last. |
+| **System** | Each thing the launcher needs, *ok* or *fix*: Shizuku, notification access, cover service, overlay, Do Not Disturb access, fold keeper, sleep while charging, and Samsung's pop-ups off / AOD "Always" when ours are on. |
+| **Fix** | Shown when something is off: re-applies every grant and the Samsung settings ours rely on (needs Shizuku running). Sleep while charging is yours to turn off (Developer options). |
 
 ## After a reboot
 
@@ -170,13 +183,15 @@ Shizuku has to be running for apps to open on the cover.
 |---|---|
 | Apps show "Open your phone to continue" | Shizuku isn't running and the app was installed after it last ran (so it isn't on the cover list yet): start Shizuku, then open the app again. |
 | Settings shows Shizuku *off* | Start Shizuku. If it's running, press *Start* in Shizuku again: the launcher asks for access each time Shizuku comes up. To take its access away, stop Shizuku or uninstall the launcher (it isn't listed under *Authorized applications*). |
-| No notifications in the panel | Settings → **Fix permissions**. |
-| Cover wakes to Samsung's clock instead of the launcher | Check *Settings → Accessibility → Installed apps → Cover Launcher* is on, or tap **Fix permissions**. |
+| No notifications in the panel | Settings → system → **Fix**. |
+| Cover wakes to Samsung's clock instead of the launcher | Check *Settings → Accessibility → Installed apps → Cover Launcher* is on, or tap **Fix**. |
 | Cover stuck on a half-transparent lock clock right after a One UI update | Samsung's post-update intro is waiting on the (dead) main screen and blocks the cover. Turn the main display on with `adb shell cmd device_state state 3`, finish the intro there (blind taps, or mirrored with [scrcpy](https://github.com/Genymobile/scrcpy) `--display-id 0`), then `adb shell cmd device_state state 0`. |
 | A new computer shows the phone as `unauthorized` | The "Allow USB debugging?" prompt should be on the cover: unlock it and answer. Not there: Shizuku must be running to move it; unplugging the cable dismisses it. |
 | Cover never turns off or locks by itself | Developer options → *Stay awake* keeps it on while charging (also over USB): `adb shell settings put global stay_on_while_plugged_in 0`. |
 | Our AOD doesn't show | Samsung's AOD must be on and set to "Always" (`aod_mode 1`, `aod_tap_to_show_mode 0`); without it the cover goes fully dark. |
-| Cover doesn't turn with the phone | The rotate tile must show *rotate* (not *locked*) and Shizuku must be running. Upside-down apps stay upside down whatever the tile says. |
+| Cover doesn't turn with the phone | The rotate tile must show *rotate* (not *locked*) and Shizuku must be running. Apps with their own rotation (drawer) keep it whatever the tile says. |
+| An app's density setting changes nothing | It runs in Samsung's compatibility sandbox (`adb shell dumpsys activity activities \| grep mCompatSandboxScale`): use the font size instead. |
+| A banking app still says to turn accessibility off | Turn on its *banking mode* (drawer → long-press) and open it from the launcher. Check while it is open: `adb shell settings get secure enabled_accessibility_services` should not list Cover Launcher. |
 | Main screen should work again | `adb shell "pkill -f coverlauncher-fold; cmd device_state state reset"` |
 
 ## Uninstall
@@ -189,6 +204,11 @@ adb shell cmd device_state state reset   # give the main screen back
 adb shell "settings put system edge_lighting 1; settings put secure cover_screen_show_notification 1"
 # the cover keeps its last rotation: turn it upright
 adb shell cmd window user-rotation -d 1 lock 0
+# only if density, font or animations were changed
+adb shell "wm density reset -d 1; settings put system font_scale 1.0"
+adb shell "settings put global window_animation_scale 1; settings put global transition_animation_scale 1; settings put global animator_duration_scale 1"
+# only for apps set to background: restricted
+adb shell "cmd appops set <package> RUN_ANY_IN_BACKGROUND allow; am set-standby-bucket <package> active"
 ```
 
 Switching pop-ups back to *samsung* before uninstalling does the last line for you.

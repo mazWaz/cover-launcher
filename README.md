@@ -18,6 +18,9 @@ Nothing-inspired design: OLED black, monochrome, dot-matrix clock.
 - **App drawer**: every app A–Z, search, pin to dock, app info, uninstall.
 - **Notification panel**: tap a notification to open it on the cover, swipe to dismiss, clear all, and up to three
   of its buttons (Mark as read, Archive…). Reply buttons open the app; calls get no buttons, tap opens the call screen.
+- **Pop-ups** (opt-in, Settings → *pop-ups: ours*): a new message shows as the panel's card at the top of the cover
+  for 5 seconds, over any app and the lock screen. Samsung's own cover pop-ups are switched off meanwhile, so nothing
+  pops up twice. Same rules as Android's heads-up: important notifications only, none that Do Not Disturb holds back.
 - **Quick toggles**: five on top; swipe down in the panel to see all of them with the brightness slider underneath.
   Wi-Fi, Bluetooth, mobile data, torch, Do Not Disturb, airplane mode, sound (ring → vibrate → mute), location,
   power saver, NFC, dark mode, keep awake (the cover stays on until you turn it off or press the power key).
@@ -120,6 +123,8 @@ That's it. Lock and wake the cover: you should land on the launcher.
 | Panel | swipe a notification sideways | dismiss it |
 | Panel | tap a notification's button | run it (Reply opens the app) |
 | Panel | swipe up (collapsed) / Back | close |
+| Pop-up | tap / tap a button | open the notification (unlocking first) / run the button |
+| Pop-up | swipe sideways / swipe up | dismiss the notification / hide the pop-up only |
 
 ## Settings
 
@@ -130,6 +135,7 @@ Long-press the home screen.
 | **Wallpaper** → choose image / reset | Your own picture, scaled to the 748×720 cover. |
 | **Dot filter** on/off | Renders the wallpaper as a dot-matrix pattern. |
 | **Icons** mono/color | Monochrome or original app icons. |
+| **Pop-ups** ours/samsung | *Ours*: the launcher's pop-up, Samsung's cover pop-ups off. *Samsung*: back to Samsung's. Needs Shizuku; shows "needs shizuku" without it. |
 | **Shizuku** ready/off | Whether the launcher can run shell commands. |
 | **Notifications** on/off | Whether notification access is granted. |
 | **Cover service** on/off | Whether the accessibility service that keeps the launcher the cover home is on. |
@@ -163,7 +169,11 @@ Shizuku has to be running for apps to open on the cover.
 adb uninstall com.mazwas.coverlauncher
 adb shell pkill -f coverlauncher-fold    # the fold keeper runs as the shell user: uninstalling doesn't stop it
 adb shell cmd device_state state reset   # give the main screen back
+# only if pop-ups were on "ours" when uninstalling: Samsung's cover pop-ups back
+adb shell "settings put system edge_lighting 1; settings put secure cover_screen_show_notification 1"
 ```
+
+Switching pop-ups back to *samsung* before uninstalling does the last line for you.
 
 ## Development
 

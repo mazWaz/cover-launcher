@@ -59,8 +59,8 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 | Aksi (maks 3 tombol) | Ya (`Notification.Action`) | Ya; Balas membuka app, panggilan tanpa tombol |
 | Balas teks | `ReplyActivity` + `RemoteInput` | Tidak |
 | Balas suara | `SpeechRecognizer` di ReplyActivity | Tidak |
-| Pop-up di atas app | Banner overlay di display 1 (bisa dimatikan) | Tidak |
-| Peek dari lock screen → buka setelah unlock | `LockScreen.pendingOpen` + `openOnUnlock` | Tidak |
+| Pop-up di atas app | Banner overlay di display 1 (bisa dimatikan) | **Ya** (opt-in): kartu panel di overlay a11y display 1, 5 s; pop-up Samsung dimatikan selama itu (`edge_lighting`, `cover_screen_show_notification`). Teruji dengan pesan WhatsApp |
+| Peek dari lock screen → buka setelah unlock | `LockScreen.pendingOpen` + `openOnUnlock` | Sebagian: ketuk pop-up saat cover terkunci → launcher membuka kunci lalu notifikasinya (belum diuji) |
 | Daftar, dismiss, clear all, pull-to-clear | Ya | Ya (kecuali pull-to-clear) |
 | Edge lighting | Overlay glow, warna per app, wake→glow→sleep | Tidak |
 

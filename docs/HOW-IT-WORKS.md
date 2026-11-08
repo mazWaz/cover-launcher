@@ -14,8 +14,9 @@ Karena itu tidak perlu root dan tidak perlu MultiStar. Allowlist cover milik Mul
 | Bagian | Kelas | Peran |
 |---|---|---|
 | `App` | `App.kt` | start Koin; saat binder Shizuku datang: minta izin Shizuku bila belum ada, lalu `Grants.apply()` (juga begitu izin diberikan) |
-| Izin | `feature/cover/Grants.kt` | 6 perubahan sistem: state lipat (+ penjaga), overlay appop, listener notifikasi, DND, accessibility, allowlist cover MultiStar |
+| Izin | `feature/cover/Grants.kt` | 6 perubahan sistem: state lipat (+ penjaga), overlay appop, listener notifikasi, DND, accessibility, allowlist cover MultiStar; plus pop-up Samsung, hanya saat pilihan pop-up berubah (§9) |
 | Home takeover | `feature/cover/CoverService.kt` | accessibility service: timpa cover home, tarik app dari layar mati, orkestrasi autostart Shizuku |
+| Pop-up | `feature/cover/CoverPopup.kt` | jendela overlay `CoverService` di display 1: notifikasi baru yang penting, 5 s (§9) |
 | Autostart | `feature/cover/ShizukuAutoStart.kt` | sekali per boot: buka Shizuku dan tekan Start |
 | Shell | `core/system/Shell.kt` | `Shizuku.newProcess` (reflection) → perintah sebagai uid 2000 |
 | Buka target | `feature/launcher/data/CoverOpener.kt` | app / notifikasi / halaman settings ke display 1 |
@@ -123,10 +124,10 @@ Clock                                                  LauncherAction → ViewMo
 | Sumber | Isi |
 |---|---|
 | `AppsSource` | `LauncherApps.getActivityList` + callback install/uninstall/update, A–Z, tanpa app sendiri |
-| `NotificationStore` | `NotificationListenerService` menyimpan `StatusBarNotification` mentah (untuk dibuka/dibatalkan); `FLAG_GROUP_SUMMARY` dan yang tanpa judul+teks dibuang |
+| `NotificationStore` | `NotificationListenerService` menyimpan `StatusBarNotification` mentah (untuk dibuka/dibatalkan); `FLAG_GROUP_SUMMARY` dan yang tanpa judul+teks dibuang; `popups` = notifikasi yang baru saja lolos `shouldPopUp` (§9) |
 | `SystemStatusSource` | battery, wifi, BT, torch, DND, airplane, data, ringer, location, power saver. Toggle lewat `Shell` (tabel di §8), data lewat `ContentObserver` pada `Settings.Global.mobile_data` |
 | `MediaSource` | `MediaSessionManager.getActiveSessions(listener)` + `OnActiveSessionsChangedListener`, menumpang izin listener notifikasi; mengikuti sesi teratas saja (paket, judul, artis, playing) dan mengirim ⏮ ⏯ ⏭ lewat `transportControls`. Ketuk judul = buka app paket itu lewat jalur app biasa. Selama pemutar tampil, notifikasi ber-`EXTRA_MEDIA_SESSION` dari paket yang sama tidak masuk daftar (`listedNotifications`) |
-| `SettingsStore` | DataStore `launcher`: dock, `IconStyle`, `wallpaperVersion`, `dotFilter`; gambar di `filesDir/wallpaper.jpg` |
+| `SettingsStore` | DataStore `launcher`: dock, `IconStyle`, `wallpaperVersion`, `dotFilter`, `popups`; gambar di `filesDir/wallpaper.jpg` |
 | `IconLoader` | `resolveActivity().getIcon()` → mono (layer monochrome di atas disc, fallback greyscale) atau warna; `LruCache` 256; ikon notifikasi = smallIcon putih |
 | `Clock` | tick tiap batas menit, format 12/24 jam ikut sistem |
 
@@ -165,6 +166,55 @@ Overlay drawer/panel adalah `enum Overlay` di state internal ViewModel, bukan ru
 | Keep awake | Tanpa shell: launcher menulis prefs `keep_awake`, `CoverService` memasang jendela 1×1 `TYPE_ACCESSIBILITY_OVERLAY` di display 1 dengan `FLAG_KEEP_SCREEN_ON`; tombol power tetap mematikan. Terukur (tanpa cas): dengan jendela itu cover tetap `Awake` setelah 40 s diam, tanpa jendela `Dozing` (timeout layar 30 s) |
 | Hotspot | **tidak ada**: HP ini tanpa SIM aktif (tak ada internet untuk dibagi) dan shell hanya bisa membuat hotspot sementara (`cmd wifi start-softap`), bukan hotspot milik pengguna |
 | Brightness cover (slider) | baca: `settings get system sub_screen_brightness` + `…_mode` (kunci tersembunyi Samsung, jadi lewat shell, saat panel dibuka); tulis saat jari dilepas: `settings put system sub_screen_brightness_mode 0; settings put system sub_screen_brightness N` (1..255). Mode otomatis dimatikan dulu: selama otomatis, Samsung terus menulis ulang nilainya. AUTO: `…_mode 1`. |
+
+## 9. Pop-up notifikasi
+
+Opt-in: Settings → *pop-ups: ours* (default *samsung*, launcher tidak menyentuh setelan Samsung).
+
+**Kapan muncul** (`shouldPopUp`, aturan heads-up Android): importance `HIGH` ke atas, lolos DND
+(`Ranking.matchesInterruptionFilter()`), notifikasi baru atau update yang berbunyi lagi (update dengan
+`FLAG_ONLY_ALERT_ONCE` diam), bukan `FLAG_GROUP_SUMMARY` (anaknya yang muncul) dan bukan `FLAG_ONGOING_EVENT`
+(unduhan/pemutar akan muncul terus; akibatnya panggilan masuk, yang ongoing, juga tanpa pop-up). Notifikasi
+launcher sendiri tidak.
+`NotificationListener` memakai `onNotificationPosted(sbn, rankingMap)`; "update" = key sudah ada di daftar sebelum
+`publish()`.
+
+**Tampilannya**: `CoverService` mengumpulkan `NotificationStore.popups` dan, bila `popups` hidup, `CoverPopup`
+memasang `ComposeView` sebagai `TYPE_ACCESSIBILITY_OVERLAY` di display 1 (jenis jendela yang sama dengan keep awake),
+lebar penuh, tinggi sesuai isi, di atas; `FLAG_NOT_FOCUSABLE`, jadi sentuhan di luar kartu jatuh ke app di bawahnya.
+Isinya `NotificationRow` milik panel. Compose di luar activity butuh lifecycle + saved-state owner di view tree:
+`AlwaysResumed`. Fade masuk 200 ms / keluar 150 ms (ease-out), hilang sendiri setelah 5 s; notifikasi lebih baru
+menggantikan yang tampil dan mengulang timer.
+
+| Gesture | Aksi |
+|---|---|
+| Ketuk / tombol | cover terkunci: `LauncherActivity.openNotification()` → launcher `unlockThen { CoverOpener.open() }`; tidak terkunci: `CoverOpener.open()` langsung, di atas app yang sedang tampil |
+| Geser ke samping | `NotificationStore.dismiss()` (sama dengan panel) |
+| Geser ke atas | sembunyikan pop-up saja |
+
+**Pop-up Samsung dimatikan** lewat `Grants.samsungPopups(false)` saat pilihan *ours*, dinyalakan lagi saat *samsung*:
+
+```sh
+settings put system edge_lighting 0                  # pil "brief" (proses com.android.systemui:edgelighting)
+settings put secure cover_screen_show_notification 0 # kartu "detailed" SubscreenNotification 748×200
+```
+
+Terbukti 2026-11-08 dengan pesan WhatsApp sungguhan (log + tangkapan layar cover tiap ±0,35 s):
+
+| `edge_lighting` | `cover_screen_show_notification` | `heads_up_notifications_enabled` | Di cover |
+|---|---|---|---|
+| 1 | 1 | 0 | pil *brief* tetap muncul |
+| 0 | 1 | 0 | kartu *detailed* muncul |
+| 1 | 0 | 1 | pil *brief* tetap muncul |
+| 0 | 0 | 1 | tidak ada; log SystemUI `MAKE DETAIL : show notification is disabled. popup not showing` |
+
+Jadi `heads_up_notifications_enabled` tidak berpengaruh di cover. Dengan pilihan *ours*: pop-up launcher tampil,
+pop-up Samsung tidak, notifikasi tetap masuk panel, dan ketukan pada kartu membuka chat di cover.
+Notifikasi tes dari adb (`cmd notification post`, channel `shell_cmd` importance 3) tidak pernah memunculkan pop-up;
+uji butuh pesan sungguhan. Belum diuji: geser, tombol, ketuk saat cover terkunci, dan apakah cover menyala sendiri
+untuk notifikasi saat kedua setelan Samsung `0`.
+
+Uninstall saat pilihan *ours* membiarkan kedua setelan `0`; kembalikan dengan nilai `1` (lihat [SETUP](SETUP.md) §7).
 
 ## Batasan yang disengaja
 

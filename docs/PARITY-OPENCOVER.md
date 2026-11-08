@@ -31,7 +31,7 @@ tidak menambah izin, tidak menambah paket baru, dan memakai `NotificationStore` 
 ## Yang sudah setara
 
 Home + wallpaper + 4 shortcut, app drawer + pencarian, daftar notifikasi (buka, swipe dismiss, clear all),
-quick settings, auto-buka saat cover di-unlock, Samsung Home kembali ke launcher, pemaksaan cover,
+pop-up notifikasi di atas app mana pun (opt-in, pop-up Samsung dimatikan selama itu), quick settings, auto-buka saat cover di-unlock, Samsung Home kembali ke launcher, pemaksaan cover,
 tanpa izin internet.
 
 ## Fitur yang belum ada

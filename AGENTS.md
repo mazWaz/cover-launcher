@@ -18,6 +18,9 @@ Sideloaded on one phone; follows the mazWaz/android-skill conventions.
 - The keyguard is swipe-only; `Activity.unlockThen {}` dismisses it before opening anything.
 - Camera cutout: bottom-right `Rect(379,654-748,720)` px. Keep tappable UI above 308 dp, or in the left half of the bottom strip.
 - Grants (overlay appop, notification listener, accessibility service, fold state) are re-applied through Shizuku in `App.kt`.
+- Samsung's cover pop-ups: `system edge_lighting` (brief pill) and `secure cover_screen_show_notification` (detailed
+  card); `global heads_up_notifications_enabled` does nothing on the cover. adb test notifications never pop up
+  (channel `shell_cmd`, importance 3): pop-up tests need a real message.
 
 ## Design (Nothing-inspired)
 - OLED black, monochrome greys; red `#D71921` only as a signal (low battery, unread, destructive).

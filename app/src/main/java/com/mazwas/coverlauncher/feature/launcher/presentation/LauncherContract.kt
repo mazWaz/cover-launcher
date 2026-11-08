@@ -31,7 +31,11 @@ data class LauncherState(
   val wallpaper: Wallpaper? = null,
   val coverBrightness: CoverBrightness? = null, // read when the panel opens; null without Shizuku (no slider)
   val nowPlaying: NowPlaying? = null, // null: nothing playing, no player
-  val flipped: Set<String> = emptySet(), // packages shown upside down
+  val appRotation: Map<String, Int> = emptyMap(), // package → its own cover rotation
+  val appDensity: Map<String, Int> = emptyMap(), // package → its own dpi
+  val restricted: Set<String> = emptySet(), // packages kept from running in the background
+  val banking: Set<String> = emptySet(), // packages opened in banking mode
+  val tiles: List<QuickToggle> = QuickToggle.entries, // panel order, hidden ones left out
 )
 
 sealed interface LauncherAction {
@@ -43,7 +47,10 @@ sealed interface LauncherAction {
   data object LaunchFirst : LauncherAction
   data class Launch(val app: LaunchableApp) : LauncherAction
   data class TogglePin(val app: LaunchableApp) : LauncherAction
-  data class ToggleFlip(val app: LaunchableApp) : LauncherAction
+  data class CycleRotation(val app: LaunchableApp) : LauncherAction
+  data class CycleDensity(val app: LaunchableApp) : LauncherAction
+  data class ToggleRestricted(val app: LaunchableApp) : LauncherAction
+  data class ToggleBanking(val app: LaunchableApp) : LauncherAction
   data class AppInfo(val app: LaunchableApp) : LauncherAction
   data class Uninstall(val app: LaunchableApp) : LauncherAction
   data class OpenNotification(val key: String) : LauncherAction

@@ -11,16 +11,22 @@ import com.mazwas.coverlauncher.core.system.Shell
 import com.mazwas.coverlauncher.core.system.TAG
 import com.mazwas.coverlauncher.core.system.COVER_DISPLAY
 import com.mazwas.coverlauncher.core.system.coverOptions
+import com.mazwas.coverlauncher.feature.cover.Grants
 import com.mazwas.coverlauncher.feature.launcher.domain.OpenTarget
 import com.mazwas.coverlauncher.feature.launcher.domain.QuickToggle
+import kotlin.concurrent.thread
 
 /** Opens apps, app pages and notifications on the cover. Call after the keyguard is gone. */
-class CoverOpener(private val context: Context, private val notifications: NotificationStore) {
+class CoverOpener(private val context: Context, private val notifications: NotificationStore, private val grants: Grants) {
 
   fun open(target: OpenTarget) {
     Log.i(TAG, "open $target")
     when (target) {
-      is OpenTarget.App -> app(target.packageName, target.className)
+      // CoverService must be off before the app starts: banking apps check for accessibility services as they open
+      is OpenTarget.App -> if (target.banking) thread {
+        grants.bankingMode(target.packageName)
+        app(target.packageName, target.className)
+      } else app(target.packageName, target.className)
       is OpenTarget.Info -> start(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri(target.packageName)))
       is OpenTarget.Uninstall -> start(Intent(Intent.ACTION_DELETE, packageUri(target.packageName)))
       is OpenTarget.Notification -> notification(target.key)

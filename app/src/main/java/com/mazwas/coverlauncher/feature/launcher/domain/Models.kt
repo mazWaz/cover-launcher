@@ -45,6 +45,7 @@ enum class SoundMode {
 
 data class SystemStatus(
   val batteryPercent: Int = 0,
+  val batteryTenthsC: Int = 0, // battery temperature, tenths of °C (371 = 37.1 °C)
   val charging: Boolean = false,
   val wifiOn: Boolean = false,
   val bluetoothOn: Boolean = false,
@@ -136,19 +137,54 @@ fun lockedView(secureLocked: Boolean, showOnLock: Boolean, showPrivate: Boolean,
 /** Quick settings tiles in panel order; the collapsed panel shows the first five. */
 enum class QuickToggle { Wifi, Bluetooth, Data, Torch, Dnd, Airplane, Sound, Location, Saver, Nfc, Dark, KeepAwake, Rotate }
 
-/**
- * The cover's rotation (Surface.ROTATION_*) for the app in front: a flipped app upside down (camera top left instead of
- * bottom right, over its buttons), otherwise the rotate tile: the [sensed] orientation, or locked at [lockedAt].
- */
-fun coverRotation(front: String, flipped: Set<String>, auto: Boolean, lockedAt: Int, sensed: Int): Int = when {
-  front in flipped -> 2
-  auto -> sensed
-  else -> lockedAt
+/** Every tile in the saved order: unknown names dropped, tiles added since appended at the end. */
+fun tileOrder(saved: List<String>?): List<QuickToggle> =
+  (saved.orEmpty().mapNotNull { name -> QuickToggle.entries.firstOrNull { it.name == name } } + QuickToggle.entries).distinct()
+
+/** [tile] moved [by] places, stopping at either end. */
+fun List<QuickToggle>.moved(tile: QuickToggle, by: Int): List<QuickToggle> {
+  val from = indexOf(tile)
+  return toMutableList().apply { add((from + by).coerceIn(0, lastIndex), removeAt(from)) }
 }
+
+/**
+ * The cover's rotation (Surface.ROTATION_*) for the app in front: its own if it has one (e.g. a game upside down so the
+ * camera sits top left instead of over its buttons), otherwise the rotate tile: [sensed], or locked at [lockedAt].
+ */
+fun coverRotation(front: String, appRotation: Map<String, Int>, auto: Boolean, lockedAt: Int, sensed: Int): Int =
+  appRotation[front] ?: if (auto) sensed else lockedAt
+
+enum class Heat { Normal, Warm, Hot }
+
+/**
+ * Battery heat: warm from 42 °C (warn), hot from 45 °C (also cut what we can). Coming down needs 1 °C below a step,
+ * so a temperature sitting on 42.0 doesn't warn again and again.
+ */
+fun heat(tenthsC: Int, before: Heat): Heat = when {
+  tenthsC >= 450 -> Heat.Hot
+  tenthsC >= 420 -> if (before == Heat.Hot && tenthsC >= 440) Heat.Hot else Heat.Warm
+  tenthsC >= 410 && before != Heat.Normal -> Heat.Warm
+  else -> Heat.Normal
+}
+
+/** The drawer menu's per-app choices, cycled by tapping; null = as the cover is set. Rotations are Surface.ROTATION_*. */
+val APP_ROTATIONS: List<Int?> = listOf(null, 0, 1, 2, 3)
+val APP_DENSITIES: List<Int?> = listOf(null, 240, 280, 360, 400) // the cover's own is 320 dpi
+
+fun <T> List<T>.after(current: T): T = get((indexOf(current) + 1) % size)
+
+/** Per-app values in DataStore: a string set of "package=value" (package names never hold '='). */
+fun Set<String>.toIntMap(): Map<String, Int> = mapNotNull { entry ->
+  val pkg = entry.substringBefore('=', "")
+  entry.substringAfter('=').toIntOrNull()?.takeIf { pkg.isNotEmpty() }?.let { pkg to it }
+}.toMap()
+
+fun Map<String, Int>.toEntrySet(): Set<String> = map { (pkg, value) -> "$pkg=$value" }.toSet()
 
 /** Something to open on the cover. */
 sealed interface OpenTarget {
-  data class App(val packageName: String, val className: String) : OpenTarget
+  /** [banking]: open it in banking mode (Grants.bankingMode). */
+  data class App(val packageName: String, val className: String, val banking: Boolean = false) : OpenTarget
   data class Info(val packageName: String) : OpenTarget
   data class Uninstall(val packageName: String) : OpenTarget
   data class Notification(val key: String) : OpenTarget
@@ -165,8 +201,14 @@ data class LauncherSettings(
   val wallpaperVersion: Long = 0, // 0 = no custom wallpaper
   val dotFilter: Boolean = true,
   val popups: Boolean = false, // our cover pop-up instead of Samsung's
-  val flipped: Set<String> = emptySet(), // packages shown upside down while in front (see coverRotation)
+  val appRotation: Map<String, Int> = emptyMap(), // package → Surface.ROTATION_* while it's in front (coverRotation)
+  val appDensity: Map<String, Int> = emptyMap(), // package → dpi while it's in front
+  val density: Int? = null, // the cover's dpi otherwise; null = its own (320)
+  val restricted: Set<String> = emptySet(), // packages kept from running in the background
+  val tiles: List<String>? = null, // QuickToggle names in panel order; null = never arranged
+  val hiddenTiles: Set<String> = emptySet(), // QuickToggle names left out of the panel
   val aod: Boolean = false, // our AOD over Samsung's while the cover dozes
+  val banking: Set<String> = emptySet(), // packages CoverService steps aside for (banking mode)
 )
 
 const val DOCK_SIZE = 4

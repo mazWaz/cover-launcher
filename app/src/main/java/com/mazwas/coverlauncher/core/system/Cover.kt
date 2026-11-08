@@ -25,6 +25,9 @@ fun Context.coverPrefs(): SharedPreferences = getSharedPreferences("keep_awake",
 /** Keep-awake tile: CoverService holds the cover on while it is set. */
 const val KEEP_AWAKE = "on"
 
+/** Set while banking mode has CoverService off: when it comes back the user is in some app, leave them there. */
+const val BANKING = "banking"
+
 /** Rotate tile: true = the cover follows the sensor, false = locked at [ROTATE_LOCK] (a Surface.ROTATION_* value). */
 const val ROTATE_AUTO = "rotate_auto"
 const val ROTATE_LOCK = "rotate_lock"

@@ -70,6 +70,7 @@ class SystemStatusSource(private val context: Context) {
     val plugged = battery?.getIntExtra(BatteryManager.EXTRA_STATUS, 0)
     SystemStatus(
       batteryPercent = level * 100 / scale,
+      batteryTenthsC = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0,
       charging = plugged == BatteryManager.BATTERY_STATUS_CHARGING || plugged == BatteryManager.BATTERY_STATUS_FULL,
       wifiOn = wifiOn, bluetoothOn = btOn, torchOn = torchOn, dndOn = dndOn,
     )
@@ -97,6 +98,10 @@ class SystemStatusSource(private val context: Context) {
       nfcOn = extra.nfc, darkOn = extra.dark, keepAwakeOn = extra.tiles.first, rotateAutoOn = extra.tiles.second,
     )
   }
+
+  /** Battery temperature in tenths of °C, on every change; cheaper than [status] for something always listening. */
+  val batteryTenthsC: Flow<Int> =
+    broadcasts(Intent.ACTION_BATTERY_CHANGED).map { it?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0 }.distinctUntilChanged()
 
   private data class Extra(val location: Boolean, val saver: Boolean, val nfc: Boolean, val dark: Boolean, val tiles: Pair<Boolean, Boolean>)
 
@@ -190,6 +195,26 @@ class SystemStatusSource(private val context: Context) {
     Shell.exec("sh", "-c", "settings put system sub_screen_brightness_mode 0; settings put system sub_screen_brightness $level")
 
   fun setCoverBrightnessAuto() = Shell.exec("settings", "put", "system", "sub_screen_brightness_mode", "1")
+
+  /** Restricted: no running in the background and the "restricted" standby bucket; allowed undoes both. */
+  fun setBackgroundRestricted(pkg: String, on: Boolean) = Shell.exec(
+    "sh", "-c",
+    "cmd appops set $pkg RUN_ANY_IN_BACKGROUND ${if (on) "ignore" else "allow"}; " +
+      "am set-standby-bucket $pkg ${if (on) "restricted" else "active"}",
+  )
+
+  fun fontScale(): Float = Settings.System.getFloat(context.contentResolver, Settings.System.FONT_SCALE, 1f)
+
+  fun setFontScale(scale: Float) = Shell.exec("settings", "put", "system", Settings.System.FONT_SCALE, "$scale")
+
+  /** Window, transition and animator scales move together, like the usual developer-options shortcut. */
+  fun animationScale(): Float = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+
+  fun setAnimationScale(scale: Float) = Shell.exec(
+    "sh", "-c",
+    listOf(Settings.Global.WINDOW_ANIMATION_SCALE, Settings.Global.TRANSITION_ANIMATION_SCALE, Settings.Global.ANIMATOR_DURATION_SCALE)
+      .joinToString("; ") { "settings put global $it $scale" },
+  )
 
   /** Silent needs Do Not Disturb access (Grants: allow_dnd). */
   fun setSound(mode: SoundMode) {

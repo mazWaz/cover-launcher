@@ -6,6 +6,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -49,6 +51,7 @@ import com.mazwas.coverlauncher.core.presentation.ObserveAsEvents
 import com.mazwas.coverlauncher.core.system.unlockThen
 import com.mazwas.coverlauncher.feature.launcher.domain.IconStyle
 import com.mazwas.coverlauncher.feature.launcher.presentation.pressable
+import com.mazwas.coverlauncher.feature.launcher.presentation.tileLook
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
@@ -111,6 +114,22 @@ fun SettingsScreen(state: SettingsState, onAction: (SettingsAction) -> Unit) {
     Setting("aod") {
       SegmentedControl(listOf(true to "ours", false to "samsung"), state.aod, { onAction(SettingsAction.SetAod(it)) })
     }
+    Section("display")
+    // all three go through the shell; per-app density and rotation live in the drawer's long-press menu
+    if (state.shizuku) {
+      Setting("density") {
+        SegmentedControl(listOf(280 to "280", null to "320", 360 to "360"), state.density, { onAction(SettingsAction.SetDensity(it)) })
+      }
+      Setting("font") {
+        SegmentedControl(listOf(0.9f to "0.9×", 1f to "1×", 1.15f to "1.15×"), state.fontScale, { onAction(SettingsAction.SetFontScale(it)) })
+      }
+      Setting("anim") {
+        SegmentedControl(listOf(0f to "off", 0.5f to "0.5×", 1f to "1×"), state.animationScale, { onAction(SettingsAction.SetAnimationScale(it)) })
+      }
+    } else {
+      Setting("density · font · anim") { Label("needs shizuku", color = MaterialTheme.status.disabled) }
+    }
+
     Section("alerts")
     // ours replaces Samsung's, which only Shizuku can switch off
     Setting("pop-ups") {
@@ -118,13 +137,27 @@ fun SettingsScreen(state: SettingsState, onAction: (SettingsAction) -> Unit) {
       else Label("needs shizuku", color = MaterialTheme.status.disabled)
     }
 
+    Section("tiles")
+    // panel order: the first five show collapsed; "setup" always comes last
+    state.tiles.forEachIndexed { i, tile ->
+      val shown = tile.name !in state.hiddenTiles
+      Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        val (icon, label) = tileLook(tile)
+        val color = if (shown) MaterialTheme.colorScheme.onSurface else MaterialTheme.status.disabled
+        Icon(painterResource(icon), null, tint = color, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(10.dp))
+        Label(label, color = color, modifier = Modifier.weight(1f))
+        TextButton("↑", enabled = i > 0) { onAction(SettingsAction.MoveTile(tile, -1)) }
+        TextButton("↓", enabled = i < state.tiles.lastIndex) { onAction(SettingsAction.MoveTile(tile, 1)) }
+        TextButton(if (shown) "on" else "off", enabled = true) { onAction(SettingsAction.ToggleTile(tile)) }
+      }
+    }
+
     Section("system")
-    Setting("shizuku") { StatusDot(state.shizuku, if (state.shizuku) "ready" else "off") }
-    Setting("notifications") { StatusDot(state.notificationAccess, if (state.notificationAccess) "on" else "off") }
-    Setting("cover service") { StatusDot(state.coverService, if (state.coverService) "on" else "off") }
-    if (!state.shizuku || !state.notificationAccess || !state.coverService) {
+    state.checks.forEach { Setting(it.name) { StatusDot(it.ok, if (it.ok) "ok" else "fix") } }
+    if (state.checks.any { !it.ok }) {
       Spacer(Modifier.height(8.dp))
-      PillButton("fix permissions", onClick = { onAction(SettingsAction.FixPermissions) })
+      PillButton("fix", onClick = { onAction(SettingsAction.FixPermissions) })
     }
   }
 }
@@ -145,6 +178,17 @@ private fun Setting(name: String, control: @Composable () -> Unit) {
     control()
   }
 }
+
+@Composable
+private fun TextButton(text: String, enabled: Boolean, onClick: () -> Unit) = Label(
+  text,
+  color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.status.disabled,
+  modifier = Modifier
+    .minimumInteractiveComponentSize()
+    .clip(CircleShape)
+    .clickable(enabled = enabled, onClick = onClick)
+    .padding(horizontal = 8.dp),
+)
 
 @Composable
 private fun StatusDot(ok: Boolean, text: String) {

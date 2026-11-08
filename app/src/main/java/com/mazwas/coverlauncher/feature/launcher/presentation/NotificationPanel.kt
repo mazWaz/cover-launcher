@@ -89,7 +89,7 @@ fun NotificationPanel(state: LauncherState, onAction: (LauncherAction) -> Unit, 
       .verticalSwipe(onUp = { if (expanded) expanded = false else onAction(LauncherAction.Close) }, onDown = { expanded = true })
       .padding(top = 14.dp),
   ) {
-    val rows = tiles(state.status).chunked(TILES_PER_ROW)
+    val rows = tiles(state.status, state.tiles).chunked(TILES_PER_ROW)
     TileRow(rows.first(), onAction)
     // the rest grows in under the first row; the alerts fade out of its way (fades and reveals only, no slides)
     AnimatedVisibility(
@@ -144,29 +144,32 @@ private fun Alerts(state: LauncherState, cutout: Dp, listModifier: Modifier, onA
 
 private class Tile(@DrawableRes val icon: Int, val label: String, val on: Boolean, val tap: LauncherAction, val hold: LauncherAction?)
 
-private fun tiles(s: SystemStatus): List<Tile> = QuickToggle.entries.map { t ->
-  val (icon, label) = when (t) {
-    QuickToggle.Wifi -> (if (s.wifiOn) R.drawable.ic_wifi else R.drawable.ic_wifi_off) to "wi-fi"
-    QuickToggle.Bluetooth -> R.drawable.ic_bluetooth to "bt"
-    QuickToggle.Data -> R.drawable.ic_arrow_down_up to "data"
-    QuickToggle.Torch -> R.drawable.ic_flashlight to "torch"
-    QuickToggle.Dnd -> R.drawable.ic_moon to "dnd"
-    QuickToggle.Airplane -> R.drawable.ic_plane to "flight"
-    QuickToggle.Sound -> when (s.sound) {
-      SoundMode.Ring -> R.drawable.ic_bell to "sound"
-      SoundMode.Vibrate -> R.drawable.ic_vibrate to "vibrate"
-      SoundMode.Silent -> R.drawable.ic_bell_off to "mute"
-    }
-    QuickToggle.Location -> R.drawable.ic_map_pin to "location"
-    QuickToggle.Saver -> R.drawable.ic_leaf to "saver"
-    QuickToggle.Nfc -> R.drawable.ic_nfc to "nfc"
-    QuickToggle.Dark -> R.drawable.ic_contrast to "dark"
-    QuickToggle.KeepAwake -> R.drawable.ic_coffee to "awake"
-    QuickToggle.Rotate -> R.drawable.ic_rotate_cw to if (s.rotateAutoOn) "rotate" else "locked"
-  }
+private fun tiles(s: SystemStatus, order: List<QuickToggle>): List<Tile> = order.map { t ->
+  val (icon, label) = tileLook(t, s)
   val hold = LauncherAction.ToggleSettings(t).takeIf { t != QuickToggle.Torch && t != QuickToggle.KeepAwake && t != QuickToggle.Rotate }
   Tile(icon, label, s.isOn(t), LauncherAction.Toggle(t), hold)
-} + Tile(R.drawable.ic_settings, "setup", false, LauncherAction.OpenSettings, null)
+} + Tile(R.drawable.ic_settings, "setup", false, LauncherAction.OpenSettings, null) // always last, can't be hidden
+
+/** A tile's icon and label; some follow its state (Wi-Fi off, sound mode, rotate locked). */
+internal fun tileLook(t: QuickToggle, s: SystemStatus = SystemStatus()): Pair<Int, String> = when (t) {
+  QuickToggle.Wifi -> (if (s.wifiOn) R.drawable.ic_wifi else R.drawable.ic_wifi_off) to "wi-fi"
+  QuickToggle.Bluetooth -> R.drawable.ic_bluetooth to "bt"
+  QuickToggle.Data -> R.drawable.ic_arrow_down_up to "data"
+  QuickToggle.Torch -> R.drawable.ic_flashlight to "torch"
+  QuickToggle.Dnd -> R.drawable.ic_moon to "dnd"
+  QuickToggle.Airplane -> R.drawable.ic_plane to "flight"
+  QuickToggle.Sound -> when (s.sound) {
+    SoundMode.Ring -> R.drawable.ic_bell to "sound"
+    SoundMode.Vibrate -> R.drawable.ic_vibrate to "vibrate"
+    SoundMode.Silent -> R.drawable.ic_bell_off to "mute"
+  }
+  QuickToggle.Location -> R.drawable.ic_map_pin to "location"
+  QuickToggle.Saver -> R.drawable.ic_leaf to "saver"
+  QuickToggle.Nfc -> R.drawable.ic_nfc to "nfc"
+  QuickToggle.Dark -> R.drawable.ic_contrast to "dark"
+  QuickToggle.KeepAwake -> R.drawable.ic_coffee to "awake"
+  QuickToggle.Rotate -> R.drawable.ic_rotate_cw to if (s.rotateAutoOn) "rotate" else "locked"
+}
 
 /** One row of up to five tiles. Tap toggles, long-press opens the system popup / settings page. */
 @Composable

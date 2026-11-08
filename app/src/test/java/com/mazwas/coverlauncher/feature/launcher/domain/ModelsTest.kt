@@ -62,11 +62,40 @@ class ModelsTest {
     assertEquals(LockedView.Hidden, lockedView(true, showOnLock = false, showPrivate = true, Notification.VISIBILITY_PUBLIC))
   }
 
-  @Test fun `flipped apps turn the cover upside down, others follow the rotate tile`() {
-    val flipped = setOf("com.mobile.legends")
-    assertEquals(2, coverRotation("com.mobile.legends", flipped, auto = true, lockedAt = 1, sensed = 3))
-    assertEquals(3, coverRotation("launcher", flipped, auto = true, lockedAt = 1, sensed = 3))
-    assertEquals(1, coverRotation("launcher", flipped, auto = false, lockedAt = 1, sensed = 3))
+  @Test fun `an app's own rotation wins, others follow the rotate tile`() {
+    val own = mapOf("com.mobile.legends" to 2, "reader" to 0)
+    assertEquals(2, coverRotation("com.mobile.legends", own, auto = true, lockedAt = 1, sensed = 3))
+    assertEquals(0, coverRotation("reader", own, auto = true, lockedAt = 1, sensed = 3))
+    assertEquals(3, coverRotation("launcher", own, auto = true, lockedAt = 1, sensed = 3))
+    assertEquals(1, coverRotation("launcher", own, auto = false, lockedAt = 1, sensed = 3))
+  }
+
+  @Test fun `tile order keeps the saved one, drops unknown names, appends new tiles, moves stop at the ends`() {
+    val order = tileOrder(listOf("Torch", "Gone", "Wifi"))
+    assertEquals(listOf(QuickToggle.Torch, QuickToggle.Wifi, QuickToggle.Bluetooth), order.take(3))
+    assertEquals(QuickToggle.entries.size, order.size)
+    assertEquals(QuickToggle.entries, tileOrder(null))
+    assertEquals(listOf(QuickToggle.Wifi, QuickToggle.Torch), order.moved(QuickToggle.Wifi, -1).take(2))
+    assertEquals(order, order.moved(QuickToggle.Torch, -1)) // already first
+    assertEquals(QuickToggle.Torch, order.moved(QuickToggle.Torch, 99).last())
+  }
+
+  @Test fun `battery heat warns at 42, acts at 45, and needs a degree less to step down`() {
+    assertEquals(Heat.Normal, heat(371, Heat.Normal))
+    assertEquals(Heat.Warm, heat(420, Heat.Normal))
+    assertEquals(Heat.Hot, heat(450, Heat.Warm))
+    assertEquals(Heat.Hot, heat(445, Heat.Hot)) // not yet 44.0
+    assertEquals(Heat.Warm, heat(439, Heat.Hot))
+    assertEquals(Heat.Warm, heat(415, Heat.Warm)) // not yet 41.0
+    assertEquals(Heat.Normal, heat(409, Heat.Warm))
+    assertEquals(Heat.Normal, heat(415, Heat.Normal)) // rising: still under 42
+  }
+
+  @Test fun `per-app values survive the DataStore string set and cycle back to default`() {
+    val values = mapOf("com.mobile.legends" to 2, "a.b" to 280)
+    assertEquals(values, values.toEntrySet().toIntMap())
+    assertEquals(emptyMap<String, Int>(), setOf("=2", "no-value", "a.b=x").toIntMap()) // malformed: dropped
+    assertEquals(listOf(0, 1, 2, 3, null), listOf(null, 0, 1, 2, 3).map { APP_ROTATIONS.after(it) })
   }
 
   @Test fun `cover list only adds missing apps to slot 26 and keeps every other slot`() {
@@ -101,7 +130,7 @@ class ModelsTest {
     assertEquals(null, parseCoverBrightness(null))
   }
 
-  @Test fun `notification age rounds down to the largest unit`() {
+    @Test fun `notification age rounds down to the largest unit`() {
     val now = 10L * 24 * 3_600_000
     assertEquals(listOf("NOW", "NOW", "5M", "3H", "2D"), listOf(now + 1_000, now - 59_000, now - 300_000, now - 3 * 3_600_000 - 1, now - 2 * 86_400_000L).map { relativeAge(it, now) })
   }

@@ -8,7 +8,11 @@ import com.mazwas.coverlauncher.feature.launcher.data.MediaSource
 import com.mazwas.coverlauncher.feature.launcher.data.NotificationStore
 import com.mazwas.coverlauncher.feature.launcher.data.SettingsStore
 import com.mazwas.coverlauncher.feature.launcher.data.SystemStatusSource
+import com.mazwas.coverlauncher.feature.launcher.domain.APP_DENSITIES
+import com.mazwas.coverlauncher.feature.launcher.domain.APP_ROTATIONS
 import com.mazwas.coverlauncher.feature.launcher.domain.CoverBrightness
+import com.mazwas.coverlauncher.feature.launcher.domain.after
+import com.mazwas.coverlauncher.feature.launcher.domain.tileOrder
 import com.mazwas.coverlauncher.feature.launcher.domain.DOCK_SIZE
 import com.mazwas.coverlauncher.feature.launcher.domain.LaunchableApp
 import com.mazwas.coverlauncher.feature.launcher.domain.LauncherNotification
@@ -67,9 +71,14 @@ class LauncherViewModel(
       else Wallpaper(settings.wallpaperFile.path, s.wallpaperVersion, s.dotFilter),
       coverBrightness = u.brightness,
       nowPlaying = playing,
-      flipped = s.flipped,
+      appRotation = s.appRotation,
+      appDensity = s.appDensity,
+      restricted = s.restricted,
+      banking = s.banking,
+      tiles = tileOrder(s.tiles).filterNot { it.name in s.hiddenTiles },
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LauncherState())
+
 
   fun onAction(action: LauncherAction) {
     when (action) {
@@ -84,9 +93,23 @@ class LauncherViewModel(
       LauncherAction.LaunchFirst -> state.value.apps.firstOrNull()?.let(::launch)
       is LauncherAction.Launch -> launch(action.app)
       is LauncherAction.TogglePin -> togglePin(action.app)
-      is LauncherAction.ToggleFlip -> {
+      is LauncherAction.CycleRotation -> {
         val pkg = action.app.packageName
-        viewModelScope.launch { settings.setFlipped(pkg, pkg !in state.value.flipped) }
+        viewModelScope.launch { settings.setAppRotation(pkg, APP_ROTATIONS.after(state.value.appRotation[pkg])) }
+      }
+      is LauncherAction.ToggleRestricted -> {
+        val pkg = action.app.packageName
+        val on = pkg !in state.value.restricted
+        system.setBackgroundRestricted(pkg, on)
+        viewModelScope.launch { settings.setRestricted(pkg, on) }
+      }
+      is LauncherAction.ToggleBanking -> {
+        val pkg = action.app.packageName
+        viewModelScope.launch { settings.setBanking(pkg, pkg !in state.value.banking) }
+      }
+      is LauncherAction.CycleDensity -> {
+        val pkg = action.app.packageName
+        viewModelScope.launch { settings.setAppDensity(pkg, APP_DENSITIES.after(state.value.appDensity[pkg])) }
       }
       is LauncherAction.AppInfo -> send(LauncherEvent.Open(OpenTarget.Info(action.app.packageName)))
       is LauncherAction.Uninstall -> send(LauncherEvent.Open(OpenTarget.Uninstall(action.app.packageName)))
@@ -115,7 +138,8 @@ class LauncherViewModel(
     }
   }
 
-  private fun launch(app: LaunchableApp) = send(LauncherEvent.Open(OpenTarget.App(app.packageName, app.className)))
+  private fun launch(app: LaunchableApp) =
+    send(LauncherEvent.Open(OpenTarget.App(app.packageName, app.className, banking = app.packageName in state.value.banking)))
 
   /** Pinning to a full dock drops its first app. */
   private fun togglePin(app: LaunchableApp) {

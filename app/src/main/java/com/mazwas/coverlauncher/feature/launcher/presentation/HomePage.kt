@@ -89,6 +89,10 @@ internal fun StatusRow(state: LauncherState) {
       NotificationIcon(it.key, 14.dp, MaterialTheme.colorScheme.onSurfaceVariant, Modifier.padding(end = 8.dp))
     }
     Spacer(Modifier.weight(1f))
+    // warm battery (see heat()): the one red thing besides low battery and unread
+    if (status.batteryTenthsC >= 420) {
+      Label("${status.batteryTenthsC / 10}°C", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(end = 8.dp))
+    }
     if (status.dndOn) StatusGlyph(R.drawable.ic_moon)
     if (status.bluetoothOn) StatusGlyph(R.drawable.ic_bluetooth)
     StatusGlyph(if (status.wifiOn) R.drawable.ic_wifi else R.drawable.ic_wifi_off)

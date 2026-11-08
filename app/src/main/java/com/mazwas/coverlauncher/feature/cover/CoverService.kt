@@ -25,6 +25,7 @@ import com.mazwas.coverlauncher.core.system.COVER_DISPLAY
 import com.mazwas.coverlauncher.core.system.KEEP_AWAKE
 import com.mazwas.coverlauncher.core.system.ROTATE_AUTO
 import com.mazwas.coverlauncher.core.system.ROTATE_LOCK
+import com.mazwas.coverlauncher.core.system.BANKING
 import com.mazwas.coverlauncher.core.system.coverPrefs
 import com.mazwas.coverlauncher.core.system.MAIN_DISPLAY
 import com.mazwas.coverlauncher.core.system.TAG
@@ -32,8 +33,14 @@ import com.mazwas.coverlauncher.core.system.coverOptions
 import com.mazwas.coverlauncher.core.system.pullToCover
 import com.mazwas.coverlauncher.feature.launcher.data.NotificationStore
 import com.mazwas.coverlauncher.feature.launcher.data.SettingsStore
+import com.mazwas.coverlauncher.feature.launcher.data.SystemStatusSource
+import com.mazwas.coverlauncher.feature.launcher.domain.Heat
+import com.mazwas.coverlauncher.feature.launcher.domain.LauncherNotification
+import com.mazwas.coverlauncher.feature.launcher.domain.QuickToggle
+import com.mazwas.coverlauncher.feature.launcher.domain.heat
 import com.mazwas.coverlauncher.feature.launcher.presentation.LauncherActivity
 import kotlinx.coroutines.MainScope
+import kotlin.concurrent.thread
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -54,8 +61,13 @@ class CoverService : AccessibilityService() {
   private val notifications: NotificationStore by inject()
   private val settings: SettingsStore by inject()
   private val popup by lazy { CoverPopup(this, get(), notifications, get()) }
-  private val rotation by lazy { CoverRotation(this) { rootInActiveWindow?.packageName } }
+  private val display by lazy { CoverDisplay(this) { rootInActiveWindow?.packageName } }
   private val aod by lazy { CoverAod(this, get(), get(), get(), notifications) }
+  private val system: SystemStatusSource by inject()
+  private var heat = Heat.Normal
+  private val grants: Grants by inject()
+  private var banking = emptySet<String>()
+  private var bankingStarted = false
   private val scope = MainScope()
 
   // Shizuku hands out its binder only when our uid starts; its "send to every client" at server start misses us on
@@ -81,8 +93,10 @@ class CoverService : AccessibilityService() {
     registerReceiver(screenOn, IntentFilter(Intent.ACTION_SCREEN_ON))
     coverPrefs().registerOnSharedPreferenceChangeListener(tilesChanged)
     holdCoverOn()
-    // boot / reinstall left no launcher task: create it now so the cover wakes to it (it shows over the lock screen)
-    showLauncher()
+    // boot / reinstall left no launcher task: create it now so the cover wakes to it (it shows over the lock screen).
+    // Back from banking mode the user is in an app: leave them there.
+    if (!coverPrefs().getBoolean(BANKING, false)) showLauncher()
+    coverPrefs().edit().remove(BANKING).apply()
     // Not over the AOD: a dozing cover takes no swipes, and the AOD already shows the new alert (icon and count) without
     // its text (seen 2026-11-08: name and message stuck on the dozing cover)
     scope.launch {
@@ -90,7 +104,13 @@ class CoverService : AccessibilityService() {
         if (settings.settings.first().popups && getSystemService(PowerManager::class.java).isInteractive) popup.show(it)
       }
     }
-    scope.launch { settings.settings.collect { rotation.flipped = it.flipped } }
+    scope.launch {
+      settings.settings.collect {
+        display.update(it)
+        banking = it.banking
+      }
+    }
+    scope.launch { system.batteryTenthsC.collect(::onTemperature) }
   }
 
   override fun onDestroy() {
@@ -100,10 +120,28 @@ class CoverService : AccessibilityService() {
     aod.hide()
     unregisterReceiver(screenOff)
     unregisterReceiver(screenOn)
-    rotation.stop()
+    display.stop()
     coverPrefs().unregisterOnSharedPreferenceChangeListener(tilesChanged)
     releaseCover()
     super.onDestroy()
+  }
+
+  /** Warm: a warning card. Hot: also keep awake and torch off and a dimmer cover; nothing else here makes heat. */
+  private fun onTemperature(tenthsC: Int) {
+    val next = heat(tenthsC, heat)
+    val rising = next > heat
+    heat = next
+    if (!rising) return
+    if (next == Heat.Hot) {
+      coverPrefs().edit().putBoolean(KEEP_AWAKE, false).apply()
+      system.toggle(QuickToggle.Torch, false)
+      system.setCoverBrightness(HOT_BRIGHTNESS)
+    }
+    val text = if (next == Heat.Hot) "keep awake and torch off, cover dimmed" else "battery getting warm"
+    // a card of its own, not a real notification: no channel or permission needed; tapping or swiping it does nothing
+    popup.show(
+      LauncherNotification(HEAT_KEY, packageName, "Cover Launcher", "Battery %.1f °C".format(tenthsC / 10f), text, System.currentTimeMillis(), clearable = false),
+    )
   }
 
   // Keep-awake tile: an invisible 1×1 window on the cover with FLAG_KEEP_SCREEN_ON stops the cover timing out, whatever
@@ -112,7 +150,7 @@ class CoverService : AccessibilityService() {
   private val tilesChanged = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
     when (key) {
       KEEP_AWAKE -> holdCoverOn()
-      ROTATE_AUTO, ROTATE_LOCK -> rotation.apply()
+      ROTATE_AUTO, ROTATE_LOCK -> display.apply()
     }
   }
 
@@ -138,7 +176,7 @@ class CoverService : AccessibilityService() {
   }
 
   override fun onAccessibilityEvent(e: AccessibilityEvent) {
-    if (e.displayId == COVER_DISPLAY) rotation.onWindow(e.packageName, e.className)
+    if (e.displayId == COVER_DISPLAY) display.onWindow(e.packageName, e.className)
     when {
       e.displayId == COVER_DISPLAY && e.className == SUB_HOME -> {
         Log.i(TAG, "cover home shown -> launcher")
@@ -153,6 +191,13 @@ class CoverService : AccessibilityService() {
         performGlobalAction(GLOBAL_ACTION_BACK)
       }
       e.packageName == ShizukuAutoStart.PACKAGE && ShizukuAutoStart.step != Step.Idle -> onShizukuWindow(e.className?.toString())
+      // opened some other way than the launcher (a notification, recents): late, but the app may check again
+      e.displayId == COVER_DISPLAY && e.packageName?.toString() in banking && !bankingStarted -> {
+        bankingStarted = true
+        val pkg = e.packageName.toString()
+        Log.i(TAG, "$pkg in front -> banking mode")
+        thread { grants.bankingMode(pkg) }
+      }
       // only while folded: when the main screen is on (unfolded, or `device_state state 3`) things belong there
       e.displayId == MAIN_DISPLAY && displays.getDisplay(MAIN_DISPLAY)?.state == Display.STATE_OFF &&
         (e.packageName?.toString() !in MAIN_SYSTEM || e.className?.toString() in DEBUG_PROMPTS) -> {
@@ -217,6 +262,8 @@ class CoverService : AccessibilityService() {
     var connected = false
       private set
 
+    private const val HEAT_KEY = "coverlauncher:heat"
+    private const val HOT_BRIGHTNESS = 40 // of 255
     private const val SUB_HOME = "com.android.systemui.subscreen.SubHomeActivity"
     private const val SUB_FLASHLIGHT = "com.android.systemui.qp.flashlight.SubroomFlashLightSettingsActivity"
     // what normally lives on the main screen; never moved

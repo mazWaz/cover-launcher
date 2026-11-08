@@ -2,16 +2,22 @@ package com.mazwas.coverlauncher.feature.cover
 
 import android.content.ComponentName
 import android.content.Context
+import android.app.NotificationManager
 import android.content.pm.LauncherApps
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import android.provider.Settings
+import com.mazwas.coverlauncher.feature.launcher.domain.LauncherSettings
 import com.mazwas.coverlauncher.feature.launcher.domain.withCoverApps
 import kotlin.concurrent.thread
+import com.mazwas.coverlauncher.core.system.BANKING
+import com.mazwas.coverlauncher.core.system.COVER_DISPLAY
 import com.mazwas.coverlauncher.core.system.Shell
+import com.mazwas.coverlauncher.core.system.coverPrefs
 import com.mazwas.coverlauncher.core.system.keepFolded
 import com.mazwas.coverlauncher.feature.launcher.data.NotificationListener
+import com.mazwas.coverlauncher.feature.launcher.presentation.LauncherActivity
 
 /** Everything the launcher needs from the shell user. Idempotent; re-run whenever Shizuku comes up (e.g. after a reboot). */
 class Grants(private val context: Context) {
@@ -55,6 +61,35 @@ class Grants(private val context: Context) {
   }
 
   /**
+   * What the Settings screen lists, each fixed by [fix] (the last one only by the user: it's their developer option).
+   * Blocking (shell): call off the main thread.
+   */
+  fun checks(listenerConnected: Boolean, settings: LauncherSettings): List<SetupCheck> {
+    val shell = Shell.ready()
+    fun sh(cmd: String) = if (shell) Shell.output("sh", "-c", cmd)?.trim() else null
+    return listOfNotNull(
+      SetupCheck("shizuku", shell),
+      SetupCheck("notifications", listenerConnected),
+      SetupCheck("cover service", coverServiceEnabled()),
+      SetupCheck("overlay", Settings.canDrawOverlays(context)),
+      SetupCheck("do not disturb", context.getSystemService(NotificationManager::class.java).isNotificationPolicyAccessGranted),
+      SetupCheck("fold keeper", !sh("pgrep -f '[c]overlauncher-fold'").isNullOrEmpty()),
+      SetupCheck("samsung pop-ups off", sh("settings get system edge_lighting; settings get secure cover_screen_show_notification") == "0\n0")
+        .takeIf { settings.popups },
+      SetupCheck("samsung aod always", sh("settings get system aod_mode; settings get system aod_tap_to_show_mode") == "1\n0")
+        .takeIf { settings.aod },
+      SetupCheck("sleeps while charging", Settings.Global.getInt(context.contentResolver, Settings.Global.STAY_ON_WHILE_PLUGGED_IN, 0) == 0),
+    )
+  }
+
+  /** [apply] plus Samsung's settings our pop-up and AOD rely on. */
+  fun fix(settings: LauncherSettings) {
+    apply()
+    if (settings.popups) samsungPopups(false)
+    if (settings.aod) Shell.exec("sh", "-c", "settings put system aod_mode 1; settings put system aod_tap_to_show_mode 0")
+  }
+
+  /**
    * Samsung's own cover pop-ups, off while ours is on so nothing pops up twice. Proven on the phone 2026-11-08 with
    * WhatsApp messages: `edge_lighting` 0 stops the brief pill, `cover_screen_show_notification` 0 the detailed card it
    * falls back to; `heads_up_notifications_enabled` stops neither. 1 is One UI's default for both (and this phone's).
@@ -63,6 +98,36 @@ class Grants(private val context: Context) {
   fun samsungPopups(on: Boolean) {
     val v = if (on) 1 else 0
     Shell.exec("sh", "-c", "settings put system edge_lighting $v; settings put secure cover_screen_show_notification $v")
+  }
+
+  /**
+   * Banking mode: banking apps refuse to run beside an accessibility service, so CoverService steps aside while [pkg]
+   * is in front. Switches it off before returning (call off the main thread, then open the app), and leaves a shell-user
+   * watcher (process `coverlauncher-bank`) that gives [pkg] 10 s to come up, then switches CoverService back on once
+   * anything else is in front (checked every 0.5 s, ~0.07 s of dumpsys each). If that is Samsung's cover home, the watcher opens the launcher, as CoverService would.
+   */
+  fun bankingMode(pkg: String) {
+    if (!Shell.ready()) return
+    val others = enabledServices().filterNot { it == coverService }
+    context.coverPrefs().edit().putBoolean(BANKING, true).commit()
+    // its own exec: in the same script the pattern would match that script's command line and kill it
+    Shell.exec("sh", "-c", "pkill -f '[c]overlauncher-bank'").join()
+    Shell.exec("sh", "-c", bankWatcher(pkg, others.joinToString(":"), (others + coverService).joinToString(":"))).join()
+  }
+
+  private fun bankWatcher(pkg: String, without: String, with: String): String {
+    val key = Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+    val launcher = ComponentName(context, LauncherActivity::class.java).flattenToShortString()
+    return """
+      settings put secure $key '$without'
+      ${if (without.isEmpty()) "settings put secure ${Settings.Secure.ACCESSIBILITY_ENABLED} 0" else ""}
+      nohup sh -c 'top() { dumpsys activity activities | grep -m1 topResumedActivity; }
+        i=0; until top | grep -qF " $pkg/"; do i=$((i + 1)); [ ${'$'}i -gt 20 ] && break; sleep 0.5; done
+        while top | grep -qF " $pkg/"; do sleep 0.5; done
+        settings put secure $key "$with"; settings put secure ${Settings.Secure.ACCESSIBILITY_ENABLED} 1
+        top | grep -qF SubHomeActivity && am start --display $COVER_DISPLAY -n $launcher
+      ' coverlauncher-bank >/dev/null 2>&1 &
+    """.trimIndent()
   }
 
   private fun rebindCoverService() {
@@ -87,3 +152,6 @@ class Grants(private val context: Context) {
     Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
       .orEmpty().split(':').filter { it.isNotEmpty() }
 }
+
+/** One line of Settings → system. */
+data class SetupCheck(val name: String, val ok: Boolean)

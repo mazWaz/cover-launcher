@@ -88,7 +88,12 @@ fun AppDrawer(state: LauncherState, onAction: (LauncherAction) -> Unit, modifier
         contentPadding = PaddingValues(start = 6.dp, end = 6.dp, top = 8.dp, bottom = cutout + 8.dp),
       ) {
         items(state.apps, key = { it.key }) { app ->
-          DrawerItem(app, pinned = app in state.dock, flipped = app.packageName in state.flipped, style = state.iconStyle, onAction = onAction)
+          DrawerItem(
+            app, pinned = app in state.dock, rotation = state.appRotation[app.packageName],
+            density = state.appDensity[app.packageName], restricted = app.packageName in state.restricted,
+            banking = app.packageName in state.banking,
+            style = state.iconStyle, onAction = onAction,
+          )
         }
       }
     }
@@ -129,7 +134,10 @@ private fun SearchField(query: String, onChange: (String) -> Unit, onGo: () -> U
 }
 
 @Composable
-private fun DrawerItem(app: LaunchableApp, pinned: Boolean, flipped: Boolean, style: IconStyle, onAction: (LauncherAction) -> Unit) {
+private fun DrawerItem(
+  app: LaunchableApp, pinned: Boolean, rotation: Int?, density: Int?, restricted: Boolean, banking: Boolean, style: IconStyle,
+  onAction: (LauncherAction) -> Unit,
+) {
   var menu by remember { mutableStateOf(false) }
   Box {
     Column(
@@ -157,8 +165,19 @@ private fun DrawerItem(app: LaunchableApp, pinned: Boolean, flipped: Boolean, st
       border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
       MenuItem(R.drawable.ic_pin, if (pinned) "unpin" else "pin to dock") { menu = false; onAction(LauncherAction.TogglePin(app)) }
-      // upside down while it's in front: moves the camera from bottom right (over game buttons) to top left
-      MenuItem(R.drawable.ic_rotate_cw, if (flipped) "upright" else "upside down") { menu = false; onAction(LauncherAction.ToggleFlip(app)) }
+      // while it's in front; tapping steps to the next value and keeps the menu open. 180° moves the camera from
+      // bottom right (over game buttons) to top left.
+      MenuItem(R.drawable.ic_rotate_cw, "rotate: ${rotation?.let { "${it * 90}°" } ?: "default"}") {
+        onAction(LauncherAction.CycleRotation(app))
+      }
+      MenuItem(R.drawable.ic_zoom_in, "density: ${density ?: "default"}") { onAction(LauncherAction.CycleDensity(app)) }
+      MenuItem(R.drawable.ic_leaf, "background: ${if (restricted) "restricted" else "allowed"}") {
+        onAction(LauncherAction.ToggleRestricted(app))
+      }
+      // CoverService off while it's in front: banking apps refuse to run beside an accessibility service
+      MenuItem(R.drawable.ic_landmark, "banking mode: ${if (banking) "on" else "off"}") {
+        onAction(LauncherAction.ToggleBanking(app))
+      }
       MenuItem(R.drawable.ic_info, "app info") { menu = false; onAction(LauncherAction.AppInfo(app)) }
       MenuItem(R.drawable.ic_trash_2, "uninstall", MaterialTheme.colorScheme.error) {
         menu = false

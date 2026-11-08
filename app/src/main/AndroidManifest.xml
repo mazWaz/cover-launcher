@@ -57,6 +57,15 @@
       </intent-filter>
     </service>
 
+    <!-- launcher back on the cover right after an update (UpdateReceiver) -->
+    <receiver
+      android:name=".feature.cover.UpdateReceiver"
+      android:exported="false">
+      <intent-filter>
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
+
     <!-- Shizuku hands us its binder through this provider (also wakes us when Shizuku starts) -->
     <provider
       android:name="rikka.shizuku.ShizukuProvider"

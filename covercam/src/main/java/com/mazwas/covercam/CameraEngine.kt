@@ -230,11 +230,9 @@ class CameraEngine(private val ctx: Context) {
     }
   }
 
-  private val extraById = mutableMapOf("2" to 90, "0" to 270)
-  private val mirrorById = mutableMapOf("0" to true, "1" to true, "3" to true)
-
-  private fun extraFor(id: String): Int = extraById[id] ?: 90
-  private fun mirrorFor(id: String): Boolean = mirrorById[id] ?: false
+  // Per-lens calibration lives in prefs ("extra_<id>", "mirror_<id>") so a label tap survives restarts.
+  private fun extraFor(id: String): Int = prefs.getInt("extra_$id", DEFAULT_EXTRA[id] ?: 90)
+  private fun mirrorFor(id: String): Boolean = prefs.getBoolean("mirror_$id", id in DEFAULT_MIRROR)
   private var currentId: String = "0"
   private val prefs = ctx.getSharedPreferences("covercam", Context.MODE_PRIVATE)
   private var aeLock = false
@@ -353,14 +351,10 @@ class CameraEngine(private val ctx: Context) {
 
   /** Restore the per-lens calibration table to its verified defaults. */
   fun resetCalibration() {
-    dngRotation = 90
-    extraById.clear()
-    extraById["2"] = 90
-    extraById["0"] = 270
-    mirrorById.clear()
-    mirrorById["0"] = true
-    mirrorById["1"] = true
-    mirrorById["3"] = true
+    val edit = prefs.edit()
+    prefs.all.keys.filter { it.startsWith("extra_") || it.startsWith("mirror_") }.forEach(edit::remove)
+    edit.remove("dngrot").remove("imuref").apply()
+    imuRotation = -1 // display rotation until the IMU commits a new reference quadrant
     openCurrent()
   }
 
@@ -1673,13 +1667,13 @@ class CameraEngine(private val ctx: Context) {
   fun jpegOrientation(): Int = (previewRotation() + 270) % 360
 
   fun bumpRotation() {
-    extraById[currentId] = (extraFor(currentId) + 90) % 360
+    prefs.edit().putInt("extra_$currentId", (extraFor(currentId) + 90) % 360).apply()
     applyTransform()
     state = state.copy(status = "id=$currentId rot=${previewRotation()} mirror=${mirrorFor(currentId)}")
   }
 
   fun toggleMirror() {
-    mirrorById[currentId] = !mirrorFor(currentId)
+    prefs.edit().putBoolean("mirror_$currentId", !mirrorFor(currentId)).apply()
     applyTransform()
     state = state.copy(status = "id=$currentId rot=${previewRotation()} mirror=${mirrorFor(currentId)}")
   }
@@ -1760,6 +1754,8 @@ class CameraEngine(private val ctx: Context) {
     private const val TAG = "CoverCam"
     private const val NIGHT_FRAMES = 5
     private const val HDR_FRAMES = 3
+    private val DEFAULT_EXTRA = mapOf("2" to 90, "0" to 270)
+    private val DEFAULT_MIRROR = setOf("0", "1", "3")
     private const val PANO_TARGET = 3
     private const val SHIFT = 6
     private const val MIN_VALID_VIDEO_BYTES = 100_000L

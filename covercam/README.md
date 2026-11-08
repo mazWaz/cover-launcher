@@ -22,7 +22,7 @@ adb install -r covercam/build/outputs/apk/release/covercam-release.apk
 for p in CAMERA RECORD_AUDIO ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION; do
   adb shell pm grant com.samsung.android.ruler android.permission.$p
 done
-adb shell am start --display 1 -n com.samsung.android.ruler/.MainActivity
+adb shell am start --display 1 -n com.samsung.android.ruler/com.mazwas.covercam.MainActivity
 ```
 
 Verifikasi:
@@ -56,7 +56,7 @@ tanpa accessibility), jadi tidak ada yang perlu dibersihkan.
 - **Tap preview** — fokus di titik itu.
 - **Tekan-lama preview** — kunci AE/AF.
 - **Pinch** — zoom 1×–8×.
-- **Tombol volume** — shutter.
+- **Volume bawah** — shutter. **Volume atas** — mode berikutnya.
 - **Label COVERCAM**: tap = rotasi preview +90° untuk lensa aktif, tekan-lama = mirror.
 - **Tombol GAL / thumbnail** — galeri in-app (share, hapus).
 
@@ -68,19 +68,21 @@ TLAPSE · HAL CAPS · RESET KALIBRASI · kualitas JPEG (semua persisten di Share
 ## Kalibrasi
 
 Layar cover punya `installOrientation = ROTATION_90`, jadi orientasi tidak bisa diturunkan
-langsung dari `Display.getRotation()`. Tiga mekanisme yang dipakai:
+langsung dari `Display.getRotation()`. Empat mekanisme yang dipakai:
 
-1. `extraById` — offset rotasi per lensa (`2`→90°, `0`→270°), dikoreksi lewat label COVERCAM.
-2. `mirrorById` — mirror horizontal per lensa (id `0`, `1`, `3`).
+1. `extra_<id>` — offset rotasi per lensa (default `2`→90°, `0`→270°, lainnya 90°), dikoreksi lewat label COVERCAM.
+2. `mirror_<id>` — mirror horizontal per lensa (default id `0`, `1`, `3`).
 3. `dngRotation` — tag orientasi DNG, terpisah karena DNG ditulis sendiri, bukan oleh HAL.
 4. `imuReference` — bila IMU ROT dinyalakan, posisi saat itu menjadi acuan 0°.
 
-`RESET KALIBRASI` mengembalikan semuanya ke nilai default.
+Semuanya tersimpan di SharedPreferences. `RESET KALIBRASI` mengembalikan keempatnya ke nilai default;
+acuan IMU diambil ulang saat HP berikutnya diputar.
 
 ## Batasan
 
 - **Depth asli mustahil** — dump HAL tidak memuat satu pun device dengan `DEPTH_OUTPUT`.
 - HDRV tanpa audio, dan belum terverifikasi di perangkat.
+- SLOWMO hanya di kamera belakang; kamera depan ditolak, dan rekaman tanpa frame dihapus otomatis.
 - PANO hanya 3 frame; kualitas bergantung pada penggeseran pengguna.
 - Night/HDR memproses per-tile 256 baris agar 12 MP tidak menghabiskan RAM.
 

@@ -11,7 +11,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.mazwas.coverlauncher.core.designsystem.NothingTheme
 import com.mazwas.coverlauncher.core.navigation.AppNavHost
-import com.mazwas.coverlauncher.core.system.Shell
 import com.mazwas.coverlauncher.core.system.unlockThen
 import com.mazwas.coverlauncher.feature.cover.ShizukuAutoStart
 import com.mazwas.coverlauncher.feature.launcher.data.CoverOpener
@@ -19,7 +18,6 @@ import com.mazwas.coverlauncher.feature.launcher.data.IconLoader
 import com.mazwas.coverlauncher.feature.launcher.domain.OpenTarget
 import kotlinx.coroutines.flow.MutableSharedFlow
 import org.koin.android.ext.android.inject
-import rikka.shizuku.Shizuku
 
 /** The cover's home. CoverService brings it back whenever Samsung's cover home would show. */
 class LauncherActivity : ComponentActivity() {
@@ -35,9 +33,6 @@ class LauncherActivity : ComponentActivity() {
       systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
       hide(WindowInsetsCompat.Type.systemBars()) // our own status row replaces them
     }
-    // Shizuku permission: ask once while its server is running
-    if (Shizuku.pingBinder() && !Shell.ready() && !Shizuku.shouldShowRequestPermissionRationale()) Shizuku.requestPermission(0)
-
     setContent {
       NothingTheme {
         CompositionLocalProvider(LocalIconLoader provides icons) {
@@ -49,9 +44,13 @@ class LauncherActivity : ComponentActivity() {
 
   override fun onResume() {
     super.onResume()
-    if (ShizukuAutoStart.claim(this)) {
-      unlockThen { opener.open(OpenTarget.App(ShizukuAutoStart.PACKAGE, ShizukuAutoStart.MAIN)) }
-    }
+    // Shizuku's binder reaches a just-started process a moment later: decide only once it had time to arrive,
+    // and only if we're still in front.
+    window.decorView.postDelayed({
+      if (hasWindowFocus() && ShizukuAutoStart.claim(this)) {
+        unlockThen { opener.open(OpenTarget.App(ShizukuAutoStart.PACKAGE, ShizukuAutoStart.MAIN)) }
+      }
+    }, 5_000)
   }
 
   /** Home pressed / app closed: CoverService started us again. */

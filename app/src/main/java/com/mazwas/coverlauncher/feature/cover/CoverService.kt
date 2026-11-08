@@ -74,7 +74,7 @@ class CoverService : AccessibilityService() {
       e.packageName == ShizukuAutoStart.PACKAGE && ShizukuAutoStart.step != Step.Idle -> onShizukuWindow(e.className?.toString())
       // only while folded: when the main screen is on (unfolded, or `device_state state 3`) things belong there
       e.displayId == MAIN_DISPLAY && displays.getDisplay(MAIN_DISPLAY)?.state == Display.STATE_OFF &&
-        e.packageName?.toString() !in MAIN_SYSTEM -> {
+        (e.packageName?.toString() !in MAIN_SYSTEM || e.className?.toString() in DEBUG_PROMPTS) -> {
         Log.i(TAG, "${e.packageName} opened on the main screen -> cover")
         pullToCover()
       }
@@ -135,5 +135,8 @@ class CoverService : AccessibilityService() {
     const val SUB_FLASHLIGHT = "com.android.systemui.qp.flashlight.SubroomFlashLightSettingsActivity"
     // what normally lives on the main screen; never moved
     val MAIN_SYSTEM = setOf(null, "com.sec.android.app.launcher", "com.android.systemui")
+    // "Allow USB/wireless debugging?" open only on the main screen: moved to the cover so the user answers them there
+    // (never answered for them: that prompt is what keeps an unknown computer from getting a shell).
+    val DEBUG_PROMPTS = setOf("com.android.systemui.usb.UsbDebuggingActivity", "com.android.systemui.wifi.WifiDebuggingActivity")
   }
 }

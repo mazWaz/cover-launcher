@@ -4,15 +4,20 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mazwas.coverlauncher.core.system.Clock
 import com.mazwas.coverlauncher.feature.launcher.data.AppsSource
+import com.mazwas.coverlauncher.feature.launcher.data.MediaSource
 import com.mazwas.coverlauncher.feature.launcher.data.NotificationStore
 import com.mazwas.coverlauncher.feature.launcher.data.SettingsStore
 import com.mazwas.coverlauncher.feature.launcher.data.SystemStatusSource
 import com.mazwas.coverlauncher.feature.launcher.domain.CoverBrightness
 import com.mazwas.coverlauncher.feature.launcher.domain.DOCK_SIZE
 import com.mazwas.coverlauncher.feature.launcher.domain.LaunchableApp
+import com.mazwas.coverlauncher.feature.launcher.domain.LauncherNotification
+import com.mazwas.coverlauncher.feature.launcher.domain.NowPlaying
+import com.mazwas.coverlauncher.feature.launcher.domain.SystemStatus
 import com.mazwas.coverlauncher.feature.launcher.domain.OpenTarget
 import com.mazwas.coverlauncher.feature.launcher.domain.QuickToggle
 import com.mazwas.coverlauncher.feature.launcher.domain.filterApps
+import com.mazwas.coverlauncher.feature.launcher.domain.listedNotifications
 import com.mazwas.coverlauncher.feature.launcher.domain.resolveDock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -32,17 +37,19 @@ class LauncherViewModel(
   private val notifications: NotificationStore,
   private val system: SystemStatusSource,
   private val clock: Clock,
+  private val media: MediaSource,
 ) : ViewModel() {
   private data class Ui(val query: String = "", val overlay: Overlay = Overlay.None, val brightness: CoverBrightness? = null)
+  private data class Live(val status: SystemStatus, val notes: List<LauncherNotification>, val access: Boolean, val playing: NowPlaying?)
 
   private val ui = MutableStateFlow(Ui())
   private val eventChannel = Channel<LauncherEvent>()
   val events = eventChannel.receiveAsFlow()
 
-  private val alerts = combine(system.status, notifications.notifications, notifications.connected, ::Triple)
+  private val live = combine(system.status, notifications.notifications, notifications.connected, media.nowPlaying, ::Live)
 
-  val state: StateFlow<LauncherState> = combine(apps.apps, settings.settings, ui, clock.ticks, alerts) { all, s, u, now, alert ->
-    val (status, notes, access) = alert
+  val state: StateFlow<LauncherState> = combine(apps.apps, settings.settings, ui, clock.ticks, live) { all, s, u, now, alert ->
+    val (status, notes, access, playing) = alert
     val shown = filterApps(all, u.query)
     LauncherState(
       time = now.format(if (clock.is24Hour()) H24 else H12),
@@ -54,12 +61,13 @@ class LauncherViewModel(
       appCount = shown.size,
       query = u.query,
       overlay = u.overlay,
-      notifications = notes,
+      notifications = listedNotifications(notes, playing),
       notificationAccess = access,
       iconStyle = s.iconStyle,
       wallpaper = if (s.wallpaperVersion == 0L) null
       else Wallpaper(settings.wallpaperFile.path, s.wallpaperVersion, s.dotFilter),
       coverBrightness = u.brightness,
+      nowPlaying = playing,
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LauncherState())
 
@@ -90,6 +98,11 @@ class LauncherViewModel(
       is LauncherAction.SetCoverBrightness -> {
         system.setCoverBrightness(action.level)
         ui.update { it.copy(brightness = CoverBrightness(action.level, auto = false)) }
+      }
+      is LauncherAction.Media -> media.command(action.command)
+      // the app's launcher entry, opened like any app (on the cover through the shell)
+      LauncherAction.OpenNowPlaying -> with(state.value) {
+        nowPlaying?.let { p -> apps.firstOrNull { it.packageName == p.packageName } }?.let(::launch)
       }
       LauncherAction.CoverBrightnessAuto -> {
         system.setCoverBrightnessAuto()

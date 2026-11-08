@@ -25,6 +25,7 @@ import com.mazwas.coverlauncher.core.presentation.ObserveAsEvents
 import com.mazwas.coverlauncher.feature.launcher.domain.CoverBrightness
 import com.mazwas.coverlauncher.feature.launcher.domain.LaunchableApp
 import com.mazwas.coverlauncher.feature.launcher.domain.LauncherNotification
+import com.mazwas.coverlauncher.feature.launcher.domain.NowPlaying
 import com.mazwas.coverlauncher.feature.launcher.domain.OpenTarget
 import com.mazwas.coverlauncher.feature.launcher.domain.SystemStatus
 import org.koin.compose.viewmodel.koinViewModel
@@ -78,6 +79,7 @@ private val previewState = LauncherState(
   now = 1_000_000,
   status = SystemStatus(batteryPercent = 72, wifiOn = true, bluetoothOn = true),
   coverBrightness = CoverBrightness(100, auto = true),
+  nowPlaying = NowPlaying("app.music", "Track title", "Artist", playing = true),
   dock = listOf("Camera", "Chrome", "Gallery", "Messages").map { LaunchableApp(it, it, it) },
   apps = listOf("Calculator", "Calendar", "Camera", "Chrome", "Clock", "Gallery", "Maps", "Messages", "Phone", "Spotify")
     .map { LaunchableApp(it, it, it) },

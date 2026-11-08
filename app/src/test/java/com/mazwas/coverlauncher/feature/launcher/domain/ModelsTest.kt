@@ -38,6 +38,20 @@ class ModelsTest {
     assertEquals(emptyList<String>(), notificationActions("call", listOf("Decline", "Answer")))
   }
 
+  @Test fun `a media session needs a title to show the player`() {
+    assertEquals(NowPlaying("m", "Song", "Band", playing = true), nowPlaying("m", "Song", "Band", true))
+    assertEquals(NowPlaying("m", "Song", "", playing = false), nowPlaying("m", "Song", null, false))
+    assertEquals(null, nowPlaying("m", "  ", "Band", true))
+    assertEquals(null, nowPlaying(null, "Song", "Band", true))
+  }
+
+  @Test fun `the player hides its own app's media notification only`() {
+    fun note(key: String, pkg: String, media: Boolean) = LauncherNotification(key, pkg, pkg, "t", "x", 0, true, media = media)
+    val notes = listOf(note("a", "music", media = true), note("b", "music", media = false), note("c", "video", media = true))
+    assertEquals(listOf("b", "c"), listedNotifications(notes, NowPlaying("music", "Song", "", true)).map { it.key })
+    assertEquals(notes, listedNotifications(notes, null))
+  }
+
   @Test fun `cover brightness parses the two settings lines`() {
     assertEquals(CoverBrightness(100, auto = true), parseCoverBrightness("100\n1\n"))
     assertEquals(CoverBrightness(20, auto = false), parseCoverBrightness("20\n0\n"))

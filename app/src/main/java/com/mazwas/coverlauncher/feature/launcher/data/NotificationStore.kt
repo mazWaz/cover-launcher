@@ -52,7 +52,8 @@ class NotificationStore(private val context: Context) {
       ?.toString().orEmpty()
     if (title.isBlank() && text.isBlank()) return null
     val actions = notificationActions(n.category, n.actions.orEmpty().map { it.title?.toString().orEmpty() })
-    return LauncherNotification(key, packageName, label(packageName), title, text, postTime, isClearable, actions)
+    val media = extras.containsKey(Notification.EXTRA_MEDIA_SESSION)
+    return LauncherNotification(key, packageName, label(packageName), title, text, postTime, isClearable, actions, media)
   }
 
   private fun label(pkg: String): String = labels.getOrPut(pkg) {

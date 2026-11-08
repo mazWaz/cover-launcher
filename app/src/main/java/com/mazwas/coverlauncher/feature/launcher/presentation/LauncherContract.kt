@@ -4,6 +4,8 @@ import com.mazwas.coverlauncher.feature.launcher.domain.CoverBrightness
 import com.mazwas.coverlauncher.feature.launcher.domain.IconStyle
 import com.mazwas.coverlauncher.feature.launcher.domain.LaunchableApp
 import com.mazwas.coverlauncher.feature.launcher.domain.LauncherNotification
+import com.mazwas.coverlauncher.feature.launcher.domain.MediaCommand
+import com.mazwas.coverlauncher.feature.launcher.domain.NowPlaying
 import com.mazwas.coverlauncher.feature.launcher.domain.OpenTarget
 import com.mazwas.coverlauncher.feature.launcher.domain.QuickToggle
 import com.mazwas.coverlauncher.feature.launcher.domain.SystemStatus
@@ -28,6 +30,7 @@ data class LauncherState(
   val iconStyle: IconStyle = IconStyle.Mono,
   val wallpaper: Wallpaper? = null,
   val coverBrightness: CoverBrightness? = null, // read when the panel opens; null without Shizuku (no slider)
+  val nowPlaying: NowPlaying? = null, // null: nothing playing, no player
 )
 
 sealed interface LauncherAction {
@@ -49,6 +52,8 @@ sealed interface LauncherAction {
   data class ToggleSettings(val toggle: QuickToggle) : LauncherAction
   data class SetCoverBrightness(val level: Int) : LauncherAction
   data object CoverBrightnessAuto : LauncherAction
+  data class Media(val command: MediaCommand) : LauncherAction
+  data object OpenNowPlaying : LauncherAction
 }
 
 sealed interface LauncherEvent {

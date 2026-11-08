@@ -5,6 +5,7 @@ import com.mazwas.coverlauncher.feature.cover.Grants
 import com.mazwas.coverlauncher.feature.launcher.data.AppsSource
 import com.mazwas.coverlauncher.feature.launcher.data.CoverOpener
 import com.mazwas.coverlauncher.feature.launcher.data.IconLoader
+import com.mazwas.coverlauncher.feature.launcher.data.MediaSource
 import com.mazwas.coverlauncher.feature.launcher.data.NotificationStore
 import com.mazwas.coverlauncher.feature.launcher.data.SettingsStore
 import com.mazwas.coverlauncher.feature.launcher.data.SystemStatusSource
@@ -21,6 +22,7 @@ val appModule = module {
   singleOf(::SettingsStore)
   singleOf(::NotificationStore)
   singleOf(::SystemStatusSource)
+  singleOf(::MediaSource)
   singleOf(::IconLoader)
   singleOf(::CoverOpener)
   viewModelOf(::LauncherViewModel)

@@ -13,6 +13,7 @@ data class LauncherNotification(
   val postedAt: Long,
   val clearable: Boolean,
   val actions: List<String> = emptyList(), // button titles; the index is the app's own action index
+  val media: Boolean = false, // carries a media session (the panel's player can stand in for it)
 )
 
 /**
@@ -54,6 +55,21 @@ data class SystemStatus(
     QuickToggle.Saver -> saverOn
   }
 }
+
+/** The media session at the top of Android's list (most recently active), for the panel's player. */
+data class NowPlaying(val packageName: String, val title: String, val artist: String, val playing: Boolean)
+
+enum class MediaCommand { Previous, PlayPause, Next }
+
+/** A session without a title (an app that registered one but plays nothing yet) shows no player. */
+fun nowPlaying(packageName: String?, title: CharSequence?, artist: CharSequence?, playing: Boolean): NowPlaying? {
+  val name = title?.toString()?.takeIf { it.isNotBlank() } ?: return null
+  return NowPlaying(packageName ?: return null, name, artist?.toString().orEmpty(), playing)
+}
+
+/** The player stands in for its app's media notification: don't list that one twice. */
+fun listedNotifications(notes: List<LauncherNotification>, playing: NowPlaying?): List<LauncherNotification> =
+  if (playing == null) notes else notes.filterNot { it.media && it.packageName == playing.packageName }
 
 /** Samsung's own cover brightness: [level] 1..255 (`system/sub_screen_brightness`) and whether auto brightness drives it. */
 data class CoverBrightness(val level: Int, val auto: Boolean)

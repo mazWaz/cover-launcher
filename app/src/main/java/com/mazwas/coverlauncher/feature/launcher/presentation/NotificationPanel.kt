@@ -40,6 +40,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.painterResource
 import com.mazwas.coverlauncher.feature.launcher.domain.CoverBrightness
+import com.mazwas.coverlauncher.feature.launcher.domain.MediaCommand
+import com.mazwas.coverlauncher.feature.launcher.domain.NowPlaying
 import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,6 +75,7 @@ fun NotificationPanel(state: LauncherState, onAction: (LauncherAction) -> Unit, 
   ) {
     QuickToggles(state, onAction)
     state.coverBrightness?.let { BrightnessRow(it, onAction) }
+    state.nowPlaying?.let { MediaRow(it, onAction) }
     Row(
       Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 6.dp),
       verticalAlignment = Alignment.CenterVertically,
@@ -148,6 +151,40 @@ private fun QuickToggles(state: LauncherState, onAction: (LauncherAction) -> Uni
 }
 
 private const val TILES_PER_PAGE = 5
+
+/** The top media session: title, artist and previous / play-pause / next. */
+@Composable
+private fun MediaRow(playing: NowPlaying, onAction: (LauncherAction) -> Unit) {
+  Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Column(
+      Modifier
+        .weight(1f)
+        .clip(RoundedCornerShape(8.dp))
+        .clickable(onClickLabel = "Open app") { onAction(LauncherAction.OpenNowPlaying) }
+        .padding(vertical = 4.dp),
+    ) {
+      Text(playing.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      if (playing.artist.isNotBlank()) {
+        Text(
+          playing.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
+      }
+    }
+    MediaButton(R.drawable.ic_skip_back, "Previous") { onAction(LauncherAction.Media(MediaCommand.Previous)) }
+    MediaButton(if (playing.playing) R.drawable.ic_pause else R.drawable.ic_play, if (playing.playing) "Pause" else "Play") {
+      onAction(LauncherAction.Media(MediaCommand.PlayPause))
+    }
+    MediaButton(R.drawable.ic_skip_forward, "Next") { onAction(LauncherAction.Media(MediaCommand.Next)) }
+  }
+}
+
+@Composable
+private fun MediaButton(@DrawableRes icon: Int, label: String, onClick: () -> Unit) {
+  Box(Modifier.size(44.dp).pressable(onClick = onClick), contentAlignment = Alignment.Center) {
+    Icon(painterResource(icon), label, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
+  }
+}
 
 /** Cover brightness. Dragging sets a manual level, written once on release; AUTO hands it back to Samsung. */
 @Composable

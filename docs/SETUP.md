@@ -85,7 +85,7 @@ Yang bisa gagal dan penanganannya:
 |---|---|---|
 | Shizuku tetap `off` | UI Shizuku bukan bahasa Inggris, atau pairing wireless debugging hilang | buka Shizuku, Start manual; pairing ulang bila perlu |
 | Apps balik ke "Open your phone" | Shizuku belum hidup | Start Shizuku, buka app lagi |
-| Cover bangun ke jam Samsung | accessibility service mati | Settings → Fix permissions, atau nyalakan manual di Accessibility |
+| Cover bangun ke jam Samsung | accessibility service mati, atau aktif tapi macet "binding" setelah update (`adb shell dumpsys accessibility \| grep -E "Bound services\|Binding services"`) | Launcher memulihkannya sendiri ±5 s setelah Shizuku tersambung; manual: Settings → Fix permissions, atau keluarkan lalu masukkan lagi service-nya di `enabled_accessibility_services` |
 | Layar utama menyala saat HP dibuka | penjaga lipat tidak jalan (Shizuku belum hidup saat `Grants` jalan) | Start Shizuku lalu Settings → Fix permissions; darurat: `adb shell cmd device_state state 0` |
 
 ## 7. Mundur

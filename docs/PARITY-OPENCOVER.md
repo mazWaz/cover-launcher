@@ -127,7 +127,8 @@ get-allowed-network-types-for-users -s 0` → `No valid subscription found`, jad
 3. **Allowlist cover** — tulis `multistar_setting_repository` (slot 26); setelah ini membuka app tidak lagi
    bergantung pada Shizuku. ~~Approve dialog debugging~~ **selesai dengan cara lain**: dialog asli dipindah ke cover
    dan dijawab pengguna (bukan a11y menekan Allow); belum diuji dengan dialog asli.
-4. **Tile lengkap + reorder** — 6 tile baru, urutan di `SettingsStore`. ~~Slider brightness~~ **selesai**:
+4. **Tile lengkap + reorder** — **sebagian selesai**: NFC, dark mode, keep awake; panel ringkas 5 tile, usap bawah =
+   semua. Hotspot ditunda (tanpa SIM). Belum: rotate, mirror, urutan di `SettingsStore`. ~~Slider brightness~~ **selesai**:
    `sub_screen_brightness` + mode otomatis (terbukti di HP: mode 0 + nilai 20 meredupkan cover).
 5. **Density/font/rotasi** — `wm density -d 1`, `cmd window user-rotation -d 1 lock N`, disimpan per paket.
 6. **Keep-awake overlay + foreground service + boot receiver** — menutup risiko BAL dan membuat app menyala

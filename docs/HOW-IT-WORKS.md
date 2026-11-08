@@ -38,6 +38,12 @@ settings put secure ACCESSIBILITY_ENABLED 1
 Dipanggil dari `App.onCreate` lewat `Shizuku.addBinderReceivedListenerSticky`, jadi berjalan **setiap kali
 binder Shizuku muncul** — termasuk setelah reboot. Semua perintah idempotent.
 
+**Service macet setelah update.** Sesudah `adb install -r`, sistem pernah membiarkan `CoverService` aktif di
+pengaturan tetapi macet di "Binding services" (tanpa `ServiceRecord`, tak dicoba ulang) — cover home, pull-to-cover,
+dialog debugging dan keep awake ikut mati. `Grants` karena itu memeriksa 5 s kemudian: kalau `CoverService.connected`
+masih false, service dikeluarkan lalu dimasukkan lagi ke `enabled_accessibility_services`, yang membuat sistem
+mem-bind ulang (cara ini terbukti memulihkan di HP).
+
 **Penjaga lipat (`keepFolded()` di `core/system/Cover.kt`).** Override `CLOSED` bertahan saat HP dibuka, tetapi
 **hilang begitu HP dilipat kembali** (terukur 2026-11-08: base `0 → 2 → 3 → 2 → 0`, override lepas di `0`), jadi
 pembukaan berikutnya akan menyalakan layar dalam yang mati. `Grants` karena itu juga menjalankan proses shell
@@ -132,9 +138,11 @@ Overlay drawer/panel adalah `enum Overlay` di state internal ViewModel, bukan ru
   dengan mode transien.
 - Wallpaper: foto apa adanya, atau halftone dot-matrix di GPU (`RuntimeShader` di `Wallpaper.kt`), lalu scrim 20 % (dot)
   / 45 % (foto) supaya teks putih tetap terbaca. Tanpa wallpaper: grid titik 8 %.
-- Gesture: `verticalSwipe` 40 dp (atas = drawer, bawah = panel), `rememberPullToClose` (tarik di ujung list = tutup),
+- Gesture: `verticalSwipe` 40 dp (atas = drawer, bawah = panel; di panel: bawah = semua tile + brightness, atas =
+  ringkas lalu tutup), `rememberPullPastEnd` (tarik di ujung list = tutup / perluas tile),
   `pressable` (skala 0,9 tanpa ripple). `Activity` menangani `configChanges` sendiri: tanpa recreate saat lipat/keyboard/density.
-- Transisi layar hanya fade (150–250 ms); navigasi lewat `NavHost`.
+- Transisi layar hanya fade (150–250 ms); navigasi lewat `NavHost`. Panel: baris tile tambahan + brightness muncul
+  dengan fade + reveal vertikal (220 ms, ease-out), alert fade keluar; ringkas kembali 150–180 ms.
 
 ## 8. Toggle cepat → perintah
 
@@ -149,6 +157,10 @@ Overlay drawer/panel adalah `enum Overlay` di state internal ViewModel, bukan ru
 | Power saver | `cmd power set-mode 1\|0` |
 | Torch | `CameraManager.setTorchMode` (tanpa shell) |
 | Sound | `AudioManager.ringerMode`; Silent butuh izin DND |
+| NFC | `cmd nfc enable-nfc` / `cmd nfc disable-nfc persist` (`svc nfc` dibunuh di HP ini, exit 137, juga dari adb); status `NfcAdapter.isEnabled` + `ACTION_ADAPTER_STATE_CHANGED` (izin normal `NFC`) |
+| Dark | `cmd uimode night yes\|no`; status `Configuration.isNightModeActive` saat `ACTION_CONFIGURATION_CHANGED` |
+| Keep awake | Tanpa shell: launcher menulis prefs `keep_awake`, `CoverService` memasang jendela 1×1 `TYPE_ACCESSIBILITY_OVERLAY` di display 1 dengan `FLAG_KEEP_SCREEN_ON`; tombol power tetap mematikan. Terukur (tanpa cas): dengan jendela itu cover tetap `Awake` setelah 40 s diam, tanpa jendela `Dozing` (timeout layar 30 s) |
+| Hotspot | **tidak ada**: HP ini tanpa SIM aktif (tak ada internet untuk dibagi) dan shell hanya bisa membuat hotspot sementara (`cmd wifi start-softap`), bukan hotspot milik pengguna |
 | Brightness cover (slider) | baca: `settings get system sub_screen_brightness` + `…_mode` (kunci tersembunyi Samsung, jadi lewat shell, saat panel dibuka); tulis saat jari dilepas: `settings put system sub_screen_brightness_mode 0; settings put system sub_screen_brightness N` (1..255). Mode otomatis dimatikan dulu: selama otomatis, Samsung terus menulis ulang nilainya. AUTO: `…_mode 1`. |
 
 ## Batasan yang disengaja

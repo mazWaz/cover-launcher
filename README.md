@@ -18,12 +18,13 @@ Nothing-inspired design: OLED black, monochrome, dot-matrix clock.
 - **App drawer**: every app A–Z, search, pin to dock, app info, uninstall.
 - **Notification panel**: tap a notification to open it on the cover, swipe to dismiss, clear all, and up to three
   of its buttons (Mark as read, Archive…). Reply buttons open the app; calls get no buttons, tap opens the call screen.
-- **Quick toggles** (swipe sideways for page 2): Wi-Fi, Bluetooth, mobile data, torch, Do Not Disturb,
-  airplane mode, sound (ring → vibrate → mute), location, power saver.
+- **Quick toggles**: five on top; swipe down in the panel to see all of them with the brightness slider underneath.
+  Wi-Fi, Bluetooth, mobile data, torch, Do Not Disturb, airplane mode, sound (ring → vibrate → mute), location,
+  power saver, NFC, dark mode, keep awake (the cover stays on until you turn it off or press the power key).
   Long-press opens the matching system popup (Wi-Fi, internet, volume) or settings page.
 - **Media player** in the panel while something plays: title, artist, previous / play-pause / next (top session).
   Tap the title to open the app; that app's media notification is left out of the list while the player shows.
-- **Cover brightness** slider under the toggles: dragging sets a manual level (auto brightness goes off), **AUTO**
+- **Cover brightness** slider under the expanded toggles: dragging sets a manual level (auto brightness goes off), **AUTO**
   hands it back to Samsung's adaptive brightness. Needs Shizuku; hidden without it.
 - **Every app opens on the cover**: apps are started on display 1 through Shizuku, which skips Samsung's
   "Open your phone to continue" screen. Apps that still open on the dead main screen are moved to the cover.
@@ -108,11 +109,12 @@ That's it. Lock and wake the cover: you should land on the launcher.
 | Drawer | pull down at the top / Back | close |
 | Panel | tap a toggle | turn it on/off |
 | Panel | long-press a toggle | system popup / settings page |
-| Panel | swipe the toggle row sideways | more toggles |
-| Panel | drag the brightness slider / tap AUTO | manual cover brightness / back to auto |
+| Panel | swipe down (or pull down at the top of the alerts) | every toggle + brightness |
+| Panel, expanded | swipe up | back to five toggles and the alerts |
+| Panel, expanded | drag the brightness slider / tap AUTO | manual cover brightness / back to auto |
 | Panel | swipe a notification sideways | dismiss it |
 | Panel | tap a notification's button | run it (Reply opens the app) |
-| Panel | swipe up / Back | close |
+| Panel | swipe up (collapsed) / Back | close |
 
 ## Settings
 

@@ -75,7 +75,7 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 
 | Fitur | OpenCover | Kita |
 |---|---|---|
-| Tile | 15: Wi-Fi, BT, senter, Rotate, sound, DND, saver, location, data, airplane, NFC, dark mode, keep awake, mirror, hotspot | 9: Wi-Fi, BT, data, senter, DND, airplane, sound, location, saver |
+| Tile | 15: Wi-Fi, BT, senter, Rotate, sound, DND, saver, location, data, airplane, NFC, dark mode, keep awake, mirror, hotspot | 12: Wi-Fi, BT, data, senter, DND, airplane, sound, location, saver, NFC, dark mode, keep awake (5 tampil, usap bawah = semua) |
 | Brightness cover | Slider (`system/sub_screen_brightness`, 1..255, Shizuku) | Ya: slider + AUTO (`…_mode`), lewat Shizuku |
 | Susun tile | Drag & drop, tambah/hapus, urutan disimpan | Tidak |
 | Long-press tile | Halaman/popup sistem | Ya (Wi-Fi, internet, volume, halaman settings) |
@@ -108,7 +108,7 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 | Restrict app di background | Ya (`cmd appops RUN_ANY_IN_BACKGROUND ignore` + `am set-standby-bucket restricted`) | Tidak |
 | Heat guard (42 °C peringatan, 45 °C matikan hotspot/mirror) | Ya, jalan di FGS | Tidak |
 | Power saving Samsung mematikan AOD → notifikasi + tombol | Ya | Tidak |
-| Keep awake di app apa pun | Ya (overlay + `FLAG_KEEP_SCREEN_ON`) | Tidak (`stay_on_while_plugged_in` = 15, efek global) |
+| Keep awake di app apa pun | Ya (overlay + `FLAG_KEEP_SCREEN_ON`) | Ya (tile; overlay a11y 1×1 di cover + `FLAG_KEEP_SCREEN_ON`) |
 | Location scanning / Google Location Accuracy | Ya | Tidak |
 
 ## J. Mirror & desktop (monitor eksternal)
@@ -154,6 +154,6 @@ Catatan: desktop di monitor tetap berguna walau panel dalam mati — output-nya 
 | LOC | 13.765 (116 file) | ±2.550 (31 file) |
 | Paket fitur | 18 (+ `ui/`) | 3 (`cover`, `launcher`, `settings`) + modul `covercam` |
 | Unit test | 39 file | lihat `app/src/test` |
-| Izin manifest | 20 (INTERNET, NFC, VIBRATE, ANSWER_PHONE_CALLS, READ_PHONE_STATE, PACKAGE_USAGE_STATS, FGS×3, RECEIVE_BOOT_COMPLETED, WRITE_SECURE_SETTINGS, …) | 5 (SYSTEM_ALERT_WINDOW, QUERY_ALL_PACKAGES, REQUEST_DELETE_PACKAGES, ACCESS_WIFI_STATE, ACCESS_NETWORK_STATE) |
+| Izin manifest | 20 (INTERNET, NFC, VIBRATE, ANSWER_PHONE_CALLS, READ_PHONE_STATE, PACKAGE_USAGE_STATS, FGS×3, RECEIVE_BOOT_COMPLETED, WRITE_SECURE_SETTINGS, …) | 6 (SYSTEM_ALERT_WINDOW, QUERY_ALL_PACKAGES, REQUEST_DELETE_PACKAGES, ACCESS_WIFI_STATE, ACCESS_NETWORK_STATE, NFC) |
 | Service | FGS watcher + a11y + notification listener + mirror service | a11y + notification listener |
 | Receiver | boot/update | tidak ada |

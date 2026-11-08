@@ -124,8 +124,8 @@ get-allowed-network-types-for-users -s 0` → `No valid subscription found`, jad
    (Answer dari listener tidak pernah membuat panggilan WA aktif di HP ini).
 2. ~~**Media player**~~ **selesai (minimal)**: baris di panel, sesi teratas, ⏮ ⏯ ⏭; `MediaSessionManager` menumpang
    izin listener. Tanpa pilihan sesi, seek, sampul.
-3. **Allowlist cover** — tulis `multistar_setting_repository` (slot 26); setelah ini membuka app tidak lagi
-   bergantung pada Shizuku. ~~Approve dialog debugging~~ **selesai dengan cara lain**: dialog asli dipindah ke cover
+3. ~~**Allowlist cover**~~ **selesai**: `Grants` menambah semua app ke slot 26 setiap Shizuku tersambung (hanya
+   menambah, backup sekali). Jalur `startActivity` tanpa Shizuku belum diuji dengan Shizuku dimatikan. ~~Approve dialog debugging~~ **selesai dengan cara lain**: dialog asli dipindah ke cover
    dan dijawab pengguna (bukan a11y menekan Allow); belum diuji dengan dialog asli.
 4. **Tile lengkap + reorder** — **sebagian selesai**: NFC, dark mode, keep awake; panel ringkas 5 tile, usap bawah =
    semua. Hotspot ditunda (tanpa SIM). Belum: rotate, mirror, urutan di `SettingsStore`. ~~Slider brightness~~ **selesai**:

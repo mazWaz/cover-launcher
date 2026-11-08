@@ -6,14 +6,15 @@ Bukan launcher yang "dipilih sebagai home". Aplikasi ini **memaksa sistem** mema
 2. cover home Samsung (`SubHomeActivity`) selalu ditimpa launcher,
 3. setiap app dibuka di `display 1` lewat shell Shizuku, bukan `startActivity` biasa.
 
-Karena itu tidak perlu root, tidak perlu MultiStar, dan tidak ada allowlist aplikasi yang harus diisi.
+Karena itu tidak perlu root dan tidak perlu MultiStar. Allowlist cover milik MultiStar diisi launcher sendiri
+(§4), sebagai jalur cadangan saat Shizuku mati.
 
 ## Peta subsistem
 
 | Bagian | Kelas | Peran |
 |---|---|---|
 | `App` | `App.kt` | start Koin; saat binder Shizuku datang: minta izin Shizuku bila belum ada, lalu `Grants.apply()` (juga begitu izin diberikan) |
-| Izin | `feature/cover/Grants.kt` | 5 perubahan sistem: state lipat, overlay appop, listener notifikasi, DND, accessibility |
+| Izin | `feature/cover/Grants.kt` | 6 perubahan sistem: state lipat (+ penjaga), overlay appop, listener notifikasi, DND, accessibility, allowlist cover MultiStar |
 | Home takeover | `feature/cover/CoverService.kt` | accessibility service: timpa cover home, tarik app dari layar mati, orkestrasi autostart Shizuku |
 | Autostart | `feature/cover/ShizukuAutoStart.kt` | sekali per boot: buka Shizuku dan tekan Start |
 | Shell | `core/system/Shell.kt` | `Shizuku.newProcess` (reflection) → perintah sebagai uid 2000 |
@@ -33,6 +34,7 @@ cmd notification allow_listener <pkg>/....NotificationListener
 cmd notification allow_dnd <pkg>                          # tile sound boleh masuk Silent
 settings put secure enabled_accessibility_services ...    # CoverService, komponen lain dipertahankan
 settings put secure ACCESSIBILITY_ENABLED 1
+settings put secure multistar_setting_repository ...      # slot 26 + semua app yang bisa dibuka (lihat §4)
 ```
 
 Dipanggil dari `App.onCreate` lewat `Shizuku.addBinderReceivedListenerSticky`, jadi berjalan **setiap kali
@@ -91,7 +93,8 @@ tombolnya tidak ditemukan dan pengguna harus menekan Start sendiri.
 
 | Target | Cara |
 |---|---|
-| App | `am start --display 1 -a MAIN -c LAUNCHER -f 0x10200000 -n pkg/cls`. Dimulai oleh shell, jadi Samsung melewati pemeriksaan "hanya app MultiStar di cover". Tanpa Shizuku: `startActivity` + `coverOptions()`. |
+| App | `am start --display 1 -a MAIN -c LAUNCHER -f 0x10200000 -n pkg/cls`. Dimulai oleh shell, jadi Samsung melewati pemeriksaan "hanya app MultiStar di cover". Tanpa Shizuku: `startActivity` + `coverOptions()`, yang Samsung izinkan untuk app di daftar cover MultiStar. |
+| Daftar cover MultiStar | Secure setting `multistar_setting_repository`: 30 slot dipisah `/`, slot 26 = `pkg,userId` dipisah `;` (`0` bila kosong). Tiap kali Shizuku tersambung, `Grants` menambahkan setiap app yang bisa dibuka (user 0, tanpa launcher sendiri) lewat `withCoverApps()`: hanya menambah, slot lain tak disentuh, tidak menulis bila tak ada yang kurang. Nilai sebelum perubahan pertama disalin ke `/data/local/tmp/coverlauncher-multistar.bak`. Terukur 2026-11-08: 35 → 40 entri, 29 slot lain identik. |
 | Notifikasi | `notification.contentIntent.send(..., coverOptions())`; kalau gagal, buka launch intent paketnya; `FLAG_AUTO_CANCEL` → notifikasi dibatalkan setelah dibuka. |
 | Tombol notifikasi | Maks 3 per notifikasi: `action.actionIntent.send(..., coverOptions())`. Tombol dengan `RemoteInput` (Balas) membuka notifikasinya; notifikasi `category=call` tanpa tombol. |
 | Halaman sistem | Panel sistem bila ada (`Settings.Panel.ACTION_WIFI`, `ACTION_INTERNET_CONNECTIVITY`, `ACTION_VOLUME`), selain itu intent settings biasa — dimulai lewat shell supaya diizinkan di cover. |
@@ -167,6 +170,6 @@ Overlay drawer/panel adalah `enum Overlay` di state internal ViewModel, bukan ru
 
 - Tidak ada balas inline (tombol Balas membuka app), tombol untuk notifikasi panggilan, pilihan antar sesi media / seek / sampul album, rotasi/density per app, mirroring,
   atau keyboard sendiri — lihat [PARITY-OPENCOVER.md](PARITY-OPENCOVER.md).
-- Membuka app **butuh** Shizuku; tanpa itu jatuh ke `startActivity` biasa dan Samsung bisa menampilkan
-  "Open your phone to continue".
+- Tanpa Shizuku, membuka app jatuh ke `startActivity` biasa: jalan untuk app di daftar cover MultiStar (diisi saat
+  Shizuku terakhir tersambung), app yang dipasang sesudahnya bisa kena "Open your phone to continue".
 - Satu perangkat target: Z Flip5, cover diasumsikan `display 1`. Ponsel lain belum diuji.

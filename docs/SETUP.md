@@ -65,6 +65,7 @@ Semua perintah di bawah dijalankan dari komputer. Format keluaran di kolom kanan
 | Accessibility hidup | `adb shell settings get secure enabled_accessibility_services` | mengandung `com.mazwas.coverlauncher/com.mazwas.coverlauncher.feature.cover.CoverService` |
 | Accessibility saklar utama | `adb shell settings get secure accessibility_enabled` | `1` |
 | Listener notifikasi | `adb shell settings get secure enabled_notification_listeners` | mengandung `com.mazwas.coverlauncher/com.mazwas.coverlauncher.feature.launcher.data.NotificationListener` |
+| Daftar cover MultiStar terisi | `adb shell "settings get secure multistar_setting_repository" \| cut -d/ -f26 \| tr ';' '\n' \| wc -l` | ≥ jumlah app di drawer |
 | Notifikasi benar-benar masuk | `adb shell cmd notification list \| head` | ada baris notifikasi aktif |
 | Shizuku siap | buka launcher → long-press home → **Shizuku: ready** | `ready` |
 | Cover service | layar Settings yang sama → **cover service** | `on` |
@@ -94,6 +95,8 @@ Yang bisa gagal dan penanganannya:
 adb uninstall com.mazwas.coverlauncher
 adb shell pkill -f coverlauncher-fold       # penjaga lipat jalan sebagai shell: TIDAK ikut hilang saat uninstall
 adb shell cmd device_state state reset      # kembalikan layar utama
+# opsional: daftar cover MultiStar seperti sebelum launcher pertama kali menambahkan app
+adb shell 'settings put secure multistar_setting_repository "$(cat /data/local/tmp/coverlauncher-multistar.bak)"'
 ```
 
 Izin yang dipasang lewat shell (overlay appop, listener, a11y, DND) hilang bersama paketnya, kecuali

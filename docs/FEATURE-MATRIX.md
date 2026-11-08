@@ -20,7 +20,7 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 
 | Mekanisme | OpenCover | Kita |
 |---|---|---|
-| Daftar app boleh tampil di cover tanpa shell | **Ya**: menulis semua app ke secure setting `multistar_setting_repository` slot 26 (`"pkg,userId;…"`), yang dibaca MultiStar. Shizuku hanya fallback. | Tidak: tiap launch lewat `am start --display 1` |
+| Daftar app boleh tampil di cover tanpa shell | **Ya**: menulis semua app ke secure setting `multistar_setting_repository` slot 26 (`"pkg,userId;…"`), yang dibaca MultiStar. Shizuku hanya fallback. | Ya, sebagai cadangan: `Grants` menambah semua app ke slot 26 (hanya menambah, backup di `/data/local/tmp`); launch utama tetap `am start --display 1` |
 | Proses yang menjaga cover | Foreground service `CoverWatcher` (`specialUse`): display change, `USER_PRESENT`, heat guard, overlay | Tidak ada service; hanya accessibility service |
 | Hidup lagi setelah boot/update | `BootReceiver` (`BOOT_COMPLETED` + `MY_PACKAGE_REPLACED`) → `startForegroundService` | Andalkan accessibility service + binder Shizuku |
 | Melawan Samsung yang menimpa state lipat | `Fold.kt`: watcher shell membaca logcat `DeviceStateManagerService`, minta ulang state `1` (TENT) saat "Committing state" 0\|3 | Penjaga shell `coverlauncher-fold`: logcat `onStateChanged` → `state 0` lagi (override hilang tiap HP dilipat) |

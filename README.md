@@ -92,7 +92,9 @@ The launcher then sets everything else up by itself through Shizuku:
 - forces the folded state (`cmd device_state state 0`),
 - allows it to come back to the front (overlay permission),
 - grants notification access and Do Not Disturb access,
-- turns on its accessibility service (the part that keeps it the cover home).
+- turns on its accessibility service (the part that keeps it the cover home),
+- adds every app to Samsung's cover app list (Good Lock MultiStar's), so apps still open on the cover while
+  Shizuku isn't running. It only adds; the old list is backed up to `/data/local/tmp/coverlauncher-multistar.bak`.
 
 That's it. Lock and wake the cover: you should land on the launcher.
 
@@ -144,7 +146,7 @@ Shizuku has to be running for apps to open on the cover.
 
 | Problem | Fix |
 |---|---|
-| Apps show "Open your phone to continue" | Shizuku isn't running: start it, then open the app from the launcher again. |
+| Apps show "Open your phone to continue" | Shizuku isn't running and the app was installed after it last ran (so it isn't on the cover list yet): start Shizuku, then open the app again. |
 | Settings shows Shizuku *off* | Start Shizuku. If it's running, allow Cover Launcher in *Shizuku → Authorized applications*. |
 | No notifications in the panel | Settings → **Fix permissions**. |
 | Cover wakes to Samsung's clock instead of the launcher | Check *Settings → Accessibility → Installed apps → Cover Launcher* is on, or tap **Fix permissions**. |

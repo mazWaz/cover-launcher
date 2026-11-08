@@ -9,9 +9,11 @@ adb install -r covercam/build/outputs/apk/release/covercam-release.apk
 ```
 
 > [!NOTE]
-> `applicationId` sengaja `com.samsung.android.ruler`. Samsung memasang allowlist paket di
-> `cameraserver` untuk lensa "hidden" (56 = main fisik, 58 = ultrawide); nama paket itu yang
-> dipakai semua mod GCam Samsung. Tanpa itu hanya ID publik `0`/`1`/`3` yang terlihat.
+> `applicationId` sengaja `com.samsung.android.ruler`, nama paket yang dipakai mod GCam Samsung karena
+> `cameraserver` Samsung menyaring lensa per paket. Di HP ini (One UI 9) dengan paket itu `cameraIdList`
+> berisi `0,1,2,3`: belakang `0` (main) dan `2` (ultrawide), depan `1` dan `3`. `dumpsys media.camera`
+> juga memuat `56` (main fisik, kemampuan sama dengan `0`) dan `58` (ultrawide fisik, sama dengan `2`), tetapi
+> keduanya tidak muncul di `cameraIdList` aplikasi. Belum diuji apa yang hilang kalau paketnya diganti.
 
 ## Penerapan
 

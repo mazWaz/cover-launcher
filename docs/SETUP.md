@@ -39,10 +39,9 @@ Harus hidup **sebelum** launcher dipakai; tanpa itu app tetap terbuka tapi bisa 
 "Open your phone to continue".
 
 - Dari HP: Shizuku → *Start via Wireless debugging* → Start.
-- Dari komputer:
-  ```sh
-  adb shell 'p=$(pm path moe.shizuku.privileged.api | cut -d: -f2); $(dirname $p)/lib/arm64/libshizuku.so'
-  ```
+- Dari komputer: Shizuku → *Start via connecting to a computer* → *View command*, jalankan perintah yang
+  ditampilkan. Jangan menebak path starter: di Shizuku 13.6 HP ini `lib/arm64/` hanya berisi `libadb.so` dan
+  `librish.so` (`libshizuku.so` tidak diekstrak).
 - Set *Settings → Apps → Shizuku → Battery → Unrestricted*.
 
 ## 4. Buka pertama kali
@@ -67,6 +66,7 @@ Semua perintah di bawah dijalankan dari komputer. Format keluaran di kolom kanan
 | Listener notifikasi | `adb shell settings get secure enabled_notification_listeners` | mengandung `com.mazwas.coverlauncher/com.mazwas.coverlauncher.feature.launcher.data.NotificationListener` |
 | Notifikasi benar-benar masuk | `adb shell cmd notification list \| head` | ada baris notifikasi aktif |
 | Shizuku siap | buka launcher → long-press home → **Shizuku: ready** | `ready` |
+| Cover service | layar Settings yang sama → **cover service** | `on` |
 | Cover home ditimpa | tekan Home/Back di cover sampai ke jam Samsung | launcher kembali sendiri |
 | App terbuka di cover | buka app dari dock | muncul di cover, bukan di layar mati |
 

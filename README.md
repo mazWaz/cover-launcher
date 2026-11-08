@@ -15,7 +15,8 @@ Nothing-inspired design: OLED black, monochrome, dot-matrix clock.
 
 - **Home**: clock, date, alert count, battery/Wi-Fi/Bluetooth/DND status, an icon per app with alerts, a 4-app dock.
 - **App drawer**: every app A–Z, search, pin to dock, app info, uninstall.
-- **Notification panel**: tap a notification to open it on the cover, swipe to dismiss, clear all.
+- **Notification panel**: tap a notification to open it on the cover, swipe to dismiss, clear all, and up to three
+  of its buttons (Mark as read, Archive…). Reply buttons open the app; calls get no buttons, tap opens the call screen.
 - **Quick toggles** (swipe sideways for page 2): Wi-Fi, Bluetooth, mobile data, torch, Do Not Disturb,
   airplane mode, sound (ring → vibrate → mute), location, power saver.
   Long-press opens the matching system popup (Wi-Fi, internet, volume) or settings page.
@@ -102,6 +103,7 @@ That's it. Lock and wake the cover: you should land on the launcher.
 | Panel | long-press a toggle | system popup / settings page |
 | Panel | swipe the toggle row sideways | more toggles |
 | Panel | swipe a notification sideways | dismiss it |
+| Panel | tap a notification's button | run it (Reply opens the app) |
 | Panel | swipe up / Back | close |
 
 ## Settings
@@ -115,6 +117,7 @@ Long-press the home screen.
 | **Icons** mono/color | Monochrome or original app icons. |
 | **Shizuku** ready/off | Whether the launcher can run shell commands. |
 | **Notifications** on/off | Whether notification access is granted. |
+| **Cover service** on/off | Whether the accessibility service that keeps the launcher the cover home is on. |
 | **Fix permissions** | Shown when something is off: re-applies every grant (needs Shizuku running). |
 
 ## After a reboot

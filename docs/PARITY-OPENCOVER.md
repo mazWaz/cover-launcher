@@ -1,8 +1,9 @@
 # Gap vs OpenCover
 
 Pembanding: [Shmubbier/OpenCover](https://github.com/Shmubbier/OpenCover) (GPL-3.0) — launcher FOSS untuk
-cover Z Flip5. Analisis di bawah dari **source**, bukan README: commit `a14a2f3`, 116 file Kotlin,
-13.765 LOC, 18 paket fitur, 39 file unit test. Repo ini ±2.543 LOC (modul `app`, tanpa test).
+cover Z Flip5. Analisis di bawah dari **source**, bukan README: commit `1fb97ca` (2026-11-06, sesudah tag
+`v0.2`), 116 file Kotlin di `app/src/main`, 13.765 LOC, 18 paket fitur (+ `ui/`), 39 file unit test.
+Repo ini ±2.550 LOC (modul `app`, tanpa test).
 
 Angka LOC di tabel = ukuran paketnya di OpenCover, patokan kasar biaya fitur itu — bukan biaya kita.
 
@@ -19,7 +20,7 @@ Status perangkat: `com.mazwas.coverlauncher` belum terpasang; yang jalan `dev.op
 | Relevan untuk HP panel-mati | ±1.788 LOC: `notify/` 430, `quick/` 409, `media/` 215, `edge/` 216, `phone/{DisplayTweaks,Rotation,RotationFeature,AppDensity,PhonePrefs}` 335, `watcher/{KeepAwake,BankingMode,BankingRules}` 183 |
 | Tiga prioritas (aksi notifikasi, media, tile+brightness) | ±700 LOC |
 | Sengaja tidak diambil | `mirror/` 858, `keyboard/` 721, `lock/` 555, `nav/` 525, `call/` 448, `home/`+`layout/`+`widgets/`+`look/` ±1.100 |
-| Repo ini sebagai pembanding | ±2.543 LOC (modul `app`, tanpa test) |
+| Repo ini sebagai pembanding | ±2.550 LOC (modul `app`, tanpa test) |
 | Mekanisme inti yang belum ada | daftar app ke cover lewat MultiStar (`multistar_setting_repository`), foreground service + boot receiver, overlay 1×1 (BAL/keep-awake), tombol approve dialog debugging |
 
 Artinya selisih fungsionalnya kecil: yang hilang dari cover-launcher adalah lapisan pemakaian
@@ -47,7 +48,7 @@ tanpa izin internet.
 | Density, font, animation scale | `phone/DisplayTweaks.kt` 58 LOC | `wm density -d 1`, `settings put system font_scale`, 3 × `*_animation_scale` | S |
 | Edge lighting per app | `edge/` 216 LOC: overlay glow, warna per app, opsi wake→glow→sleep | overlay window + `wakeUp` | M |
 | Keep awake di app apa pun | `watcher/KeepAwake.kt`: overlay 1×1 di display 1 + `FLAG_KEEP_SCREEN_ON` | overlay sekaligus memenuhi syarat BAL Android 15+ | S |
-| Banking: a11y dimatikan sementara | `watcher/BankingMode` + `BankingRules` (usage events) | `Settings.Secure.ACCESSIBILITY_ENABLED` (appop `WRITE_SECURE_SETTINGS`) | S |
+| Banking: a11y dimatikan sementara | `watcher/BankingMode` + `BankingRules` (usage events) | `Settings.Secure.ACCESSIBILITY_ENABLED` (izin `WRITE_SECURE_SETTINGS`, di-grant lewat adb) | S |
 | Panggilan di cover | `call/` 448 LOC: `Notification.EXTRA_ANSWER_INTENT`, fallback `TelecomManager.acceptRingingCall` | notifikasi panggilan + PendingIntent | M |
 | AOD + lock screen sendiri | `lock/` 555 LOC: overlay, cek AOD Samsung siap, layout drag | overlay di atas keyguard | L |
 | Keyboard sendiri | `keyboard/` 721 LOC: `InputMethodService`, saran kata, swipe | IME penuh | L |
@@ -59,19 +60,19 @@ tanpa izin internet.
 | Foreground service + boot receiver | `watcher/CoverWatcher` (`specialUse`) + `BootReceiver` | `startForegroundService`, `BOOT_COMPLETED`, `MY_PACKAGE_REPLACED` | M |
 | Approve dialog "Allow USB debugging" | `CoverAccessibility` menekan **Allow** pada dialog di layar mati | a11y `findAccessibilityNodeInfosByText("Allow")` | S |
 
-## Terverifikasi di HP ini (15 menit sebelum dokumen ini ditulis)
+## Terverifikasi di HP ini (dicek ulang 2026-11-08)
 
 ```sh
-adb shell settings get system sub_screen_brightness   # → 83   (kunci brightness cover Samsung ada)
-adb shell settings get system screen_brightness       # → 70   (kunci normal, bukan yang dipakai cover)
+adb shell settings get system sub_screen_brightness   # → 101  (kunci brightness cover Samsung ada; nilainya berubah-ubah)
+adb shell settings get system screen_brightness       # → 51   (kunci normal, bukan yang dipakai cover)
 adb shell cmd window -h | grep -A1 rotation           # → user-rotation [-d DISPLAY_ID] [free|lock] [rotation]
                                                       #   fixed-to-user-rotation [-d DISPLAY_ID] [enabled|...]
 adb shell cmd window density -d 1                     # → "Physical density: 320" (override per display didukung)
-adb shell settings get secure multistar_setting_repository   # → slot 26 berisi "pkg,userId;…", 33 app
+adb shell settings get secure multistar_setting_repository   # → slot 26 berisi "pkg,userId;…", 35 entri
 adb shell dumpsys package dev.opencover | grep WRITE_SECURE_SETTINGS   # → granted=true
 ```
 
-Jadi keempat API yang dipakai OpenCover (brightness cover, rotasi per display, density per display) plus jalur
+Jadi ketiga API yang dipakai OpenCover (brightness cover, rotasi per display, density per display) plus jalur
 allowlist MultiStar tersedia di One UI 9 / Android 17 ini. Satu yang tidak: `cmd phone
 get-allowed-network-types-for-users -s 0` → `No valid subscription found`, jadi toggle 5G butuh SIM aktif.
 
@@ -85,16 +86,21 @@ get-allowed-network-types-for-users -s 0` → `No valid subscription found`, jad
    kalau proses punya window overlay yang terlihat (kalau tidak: `BAL_BLOCK`). Launcher kita mengandalkan
    appop `SYSTEM_ALERT_WINDOW` + accessibility service; kalau back-to-launcher gagal tanpa sebab jelas,
    ini tersangka pertamanya dan solusinya overlay kecil di display 1.
-4. **Keeper state lipat.** `phone/Fold.kt` menjalankan loop shell yang membaca output `cmd device_state`
-   dan menulis ulang `state 0` setiap kali Samsung "committing state 0|3" — sama seperti
-   `/data/local/tmp/keepcover.sh` di HP ini. Launcher kita hanya mengulang `state 0` saat binder Shizuku
-   muncul, jadi kalah cepat kalau Samsung menimpa belakangan. Kalau layar mati saat HP dibuka, pindahkan
-   loop itu ke dalam app (`sh -c` lewat Shizuku), jangan andalkan skrip manual.
+4. **Keeper state lipat.** `phone/Fold.kt` (opsi *keep cover on*) memasang watcher shell lewat Shizuku
+   (`nohup`, tetap hidup tanpa proses OpenCover) yang membaca **logcat** `DeviceStateManagerService` dan
+   meminta ulang state **1 (TENT)** setiap kali sistem "Committing state" 0 atau 3 — Android membuang override
+   setiap kali state fisik berubah. TENT dipilih karena sensor HP tidak pernah melaporkannya, jadi cover tetap
+   menyala apa pun kata sensor engsel. Ini berbeda dari `/data/local/tmp/keepcover.sh` di HP ini, yang
+   *polling* `cmd device_state print-state` tiap 1 s dan memaksa state 0. Launcher kita hanya mengulang
+   `state 0` saat binder Shizuku muncul, jadi kalah kalau Samsung menimpa belakangan. Kalau layar mati saat HP
+   dibuka, pindahkan watcher semacam itu ke dalam app (`sh -c` lewat Shizuku), jangan andalkan skrip manual.
+   Catatan dari HP ini (2026-11-08): ada 11 proses `opencover-fold-watch` yang jalan bersamaan.
 
 5. **Ada jalan menghindari shell sama sekali.** `apps/CoverAllowList.kt` menulis semua paket ke secure
    setting `multistar_setting_repository` (slot 26, `"pkg,userId;…"`) — daftar yang dibaca MultiStar.
-   Setelah itu `startActivity` dari app sendiri **diizinkan** Samsung di cover, bahkan membawa animasi
-   grow-from-icon; `am start` hanya fallback. Launcher kita melewati jalur ini dan bergantung pada shell
+   Setelah itu `startActivity` (dari accessibility service atau activity OpenCover) **diizinkan** Samsung di
+   cover dan bisa membawa animasi custom — kartu yang tumbuh dari ikon (animasi Compose OpenCover sendiri,
+   karena cover Samsung mengabaikan animasi grow sistem) lalu app fade-in di atasnya; `am start` hanya fallback. Launcher kita melewati jalur ini dan bergantung pada shell
    di setiap launch, yang berarti bergantung pada Shizuku hidup.
 
 6. **Prosesnya bukan cuma accessibility.** `watcher/CoverWatcher` adalah foreground service `specialUse`
@@ -109,12 +115,12 @@ get-allowed-network-types-for-users -s 0` → `No valid subscription found`, jad
 | Tekan **Start** Shizuku otomatis ±90 s setelah boot (One UI 9 mematahkan start-on-boot-nya) | Start manual setiap reboot |
 | Wallpaper halftone dot-matrix di GPU + gaya Nothing | foto/GIF, tanpa halftone |
 | `pullToCover()` untuk app yang nyangkut di task layar mati | `KeepOnCover` (mirip, per window) |
-| Paksa `device_state 0` setiap binder Shizuku datang | opsi "keep cover on", tidak selalu |
+| Paksa `device_state 0` setiap binder Shizuku datang | opsi "keep cover on" (tahan TENT + watcher logcat), tidak selalu |
 
 ## Urutan pengerjaan
 
-1. **Aksi notifikasi** — `NotificationRow` + `SBN.notification.actions` (maks 3); `acceptsReply` sementara
-   dialihkan ke "buka app" sampai ada keyboard.
+1. ~~**Aksi notifikasi**~~ — **selesai**: maks 3 tombol, Balas membuka app, notifikasi panggilan tanpa tombol
+   (Answer dari listener tidak pernah membuat panggilan WA aktif di HP ini).
 2. **Media player** — tab di panel, `MediaSessionManager` menumpang izin yang ada. ±200 LOC termasuk UI.
 3. **Allowlist cover + approve dialog debugging** — tulis `multistar_setting_repository` (slot 26) dan tombol
    a11y untuk dialog `Allow`; setelah ini membuka app tidak lagi bergantung pada Shizuku.

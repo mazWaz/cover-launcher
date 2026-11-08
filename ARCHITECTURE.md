@@ -10,7 +10,7 @@ com.mazwas.coverlauncher
 │   ├── presentation/              ObserveAsEvents
 │   └── navigation/                routes + AppNavHost (fades only)
 └── feature/
-    ├── cover/                     CoverService (reopens the launcher when Samsung's cover home shows), Grants (shell setup)
+    ├── cover/                     CoverService (reopens the launcher when Samsung's cover home shows), Grants (shell setup), ShizukuAutoStart
     ├── launcher/
     │   ├── domain/                LaunchableApp, LauncherNotification, SystemStatus, OpenTarget, LauncherSettings, filterApps, resolveDock, relativeAge
     │   ├── data/                  AppsSource, IconLoader, SettingsStore, NotificationStore (+ listener), SystemStatusSource (+ toggles), CoverOpener

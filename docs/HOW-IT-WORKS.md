@@ -66,8 +66,9 @@ boot** (dibandingkan dengan `Settings.Global.BOOT_COUNT`), `LauncherActivity.onR
 cover. Lalu `CoverService` mencari `CardView` berisi teks "Wireless debugging" dan menekan tombol "Start"
 di dalamnya; kembali ke launcher saat `MainActivity` muncul lagi (server sudah hidup).
 
-Batasannya: bergantung pada UI Inggris Shizuku. Kalau bahasanya berubah, tombolnya tidak ditemukan dan
-pengguna harus menekan Start sendiri.
+Batasannya: bergantung pada UI Inggris Shizuku ("Start via Wireless debugging" / "Start"). Shizuku 13.6 punya
+terjemahan, termasuk Indonesia ("Mulai melalui Debug Nirkabel" / "Mulai"), jadi kalau bahasa HP bukan Inggris
+tombolnya tidak ditemukan dan pengguna harus menekan Start sendiri.
 
 ## 4. Membuka sesuatu di cover
 
@@ -75,6 +76,7 @@ pengguna harus menekan Start sendiri.
 |---|---|
 | App | `am start --display 1 -a MAIN -c LAUNCHER -f 0x10200000 -n pkg/cls`. Dimulai oleh shell, jadi Samsung melewati pemeriksaan "hanya app MultiStar di cover". Tanpa Shizuku: `startActivity` + `coverOptions()`. |
 | Notifikasi | `notification.contentIntent.send(..., coverOptions())`; kalau gagal, buka launch intent paketnya; `FLAG_AUTO_CANCEL` → notifikasi dibatalkan setelah dibuka. |
+| Tombol notifikasi | Maks 3 per notifikasi: `action.actionIntent.send(..., coverOptions())`. Tombol dengan `RemoteInput` (Balas) membuka notifikasinya; notifikasi `category=call` tanpa tombol. |
 | Halaman sistem | Panel sistem bila ada (`Settings.Panel.ACTION_WIFI`, `ACTION_INTERNET_CONNECTIVITY`, `ACTION_VOLUME`), selain itu intent settings biasa — dimulai lewat shell supaya diizinkan di cover. |
 | App info / uninstall | intent `ACTION_APPLICATION_DETAILS_SETTINGS` / `ACTION_DELETE`. |
 
@@ -138,7 +140,7 @@ Overlay drawer/panel adalah `enum Overlay` di state internal ViewModel, bukan ru
 
 ## Batasan yang disengaja
 
-- Tidak ada aksi notifikasi, balas inline, media player, slider brightness, rotasi/density per app, mirroring,
+- Tidak ada balas inline (tombol Balas membuka app), tombol untuk notifikasi panggilan, media player, slider brightness, rotasi/density per app, mirroring,
   atau keyboard sendiri — lihat [PARITY-OPENCOVER.md](PARITY-OPENCOVER.md).
 - Membuka app **butuh** Shizuku; tanpa itu jatuh ke `startActivity` biasa dan Samsung bisa menampilkan
   "Open your phone to continue".

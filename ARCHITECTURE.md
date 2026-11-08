@@ -21,3 +21,6 @@ com.mazwas.coverlauncher
 Flow: data sources expose `Flow`s → `LauncherViewModel` combines them into one `LauncherState` →
 stateless composables render it and send `LauncherAction`s back. Anything that needs the Activity
 (keyguard, starting other apps) leaves the ViewModel as a `LauncherEvent` and runs in the Root.
+
+Mechanism in prose (display forcing, cover-home takeover, Shizuku binder and autostart, pull-to-cover):
+[docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md).

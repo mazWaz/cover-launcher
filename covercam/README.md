@@ -13,6 +13,29 @@ adb install -r covercam/build/outputs/apk/release/covercam-release.apk
 > `cameraserver` untuk lensa "hidden" (56 = main fisik, 58 = ultrawide); nama paket itu yang
 > dipakai semua mod GCam Samsung. Tanpa itu hanya ID publik `0`/`1`/`3` yang terlihat.
 
+## Penerapan
+
+```sh
+./gradlew :covercam:assembleRelease
+adb install -r covercam/build/outputs/apk/release/covercam-release.apk
+# izin runtime: dialog di cover tidak selalu muncul, jadi berikan lewat adb
+for p in CAMERA RECORD_AUDIO ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION; do
+  adb shell pm grant com.samsung.android.ruler android.permission.$p
+done
+adb shell am start --display 1 -n com.samsung.android.ruler/.MainActivity
+```
+
+Verifikasi:
+
+| Cek | Perintah | Harapan |
+|---|---|---|
+| APK terpasang | `adb shell pm list packages \| grep ruler` | `package:com.samsung.android.ruler` |
+| Izin aktif | `adb shell dumpsys package com.samsung.android.ruler \| grep -E "CAMERA\|RECORD_AUDIO"` | `granted=true` |
+| Hasil tersimpan | `adb shell ls /sdcard/DCIM/CoverCam` | ada file JPEG/MP4/DNG baru |
+
+Mundur: `adb uninstall com.samsung.android.ruler`. Tidak ada izin sistem lain yang dipasang (tanpa Shizuku,
+tanpa accessibility), jadi tidak ada yang perlu dibersihkan.
+
 ## Mode
 
 | Mode | Isi |

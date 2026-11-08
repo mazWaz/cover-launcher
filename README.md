@@ -154,7 +154,10 @@ adb shell cmd device_state state reset   # give the main screen back
 
 Kotlin, Jetpack Compose + Material 3, Koin, DataStore, MVI per screen.
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the package layout and [AGENTS.md](AGENTS.md) for conventions and
-device rules (display ids, camera cutout, design tokens).
+device rules (display ids, camera cutout, design tokens). Deeper docs: [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md)
+(mechanism), [docs/SETUP.md](docs/SETUP.md) (install and verify every grant with adb, rollback),
+[docs/PARITY-OPENCOVER.md](docs/PARITY-OPENCOVER.md) (what is still missing against OpenCover) and
+[docs/FEATURE-MATRIX.md](docs/FEATURE-MATRIX.md) (feature-by-feature inventory).
 
 ## Credits
 

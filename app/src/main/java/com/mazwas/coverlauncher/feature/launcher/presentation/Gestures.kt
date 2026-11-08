@@ -50,12 +50,12 @@ fun Modifier.verticalSwipe(onUp: (() -> Unit)? = null, onDown: (() -> Unit)? = n
 }
 
 /**
- * Closes an overlay when its list is pulled past its end: down at the top ([down] = true) or up at the bottom.
- * Takes the overscroll so the list doesn't stretch while closing.
+ * Fires when a list is pulled past its end: down at the top ([down] = true) or up at the bottom. Closes the drawer and
+ * panel, expands the panel's tiles. Takes the overscroll so the list doesn't stretch meanwhile.
  */
 @Composable
-fun rememberPullToClose(down: Boolean, onClose: () -> Unit): NestedScrollConnection {
-  val close by rememberUpdatedState(onClose)
+fun rememberPullPastEnd(down: Boolean, onPull: () -> Unit): NestedScrollConnection {
+  val close by rememberUpdatedState(onPull)
   val threshold = with(LocalDensity.current) { SWIPE.toPx() * 1.5f }
   return remember(down, threshold) {
     object : NestedScrollConnection {

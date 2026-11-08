@@ -3,6 +3,8 @@ package com.mazwas.coverlauncher.core.system
 import android.app.Activity
 import android.app.ActivityOptions
 import android.app.KeyguardManager
+import android.content.Context
+import android.content.SharedPreferences
 import android.os.Bundle
 import kotlin.concurrent.thread
 
@@ -13,6 +15,10 @@ const val COVER_DISPLAY = 1
 
 /** The (dead) main screen. */
 const val MAIN_DISPLAY = 0
+
+/** Keep-awake tile: the launcher writes [KEEP_AWAKE], CoverService holds the cover on while it is set. */
+fun Context.keepAwakePrefs(): SharedPreferences = getSharedPreferences("keep_awake", Context.MODE_PRIVATE)
+const val KEEP_AWAKE = "on"
 
 /** Start options that put an activity (or a notification's PendingIntent) on the cover. */
 @Suppress("DEPRECATION") // ALLOW_ALWAYS is API 36; minSdk is 34

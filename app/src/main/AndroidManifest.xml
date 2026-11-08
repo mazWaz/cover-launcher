@@ -9,6 +9,8 @@
   <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
   <!-- TelephonyManager.isDataEnabled for the data tile -->
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <!-- NfcAdapter.isEnabled for the NFC tile (normal permission, granted at install) -->
+  <uses-permission android:name="android.permission.NFC" />
 
   <application
     android:name=".App"

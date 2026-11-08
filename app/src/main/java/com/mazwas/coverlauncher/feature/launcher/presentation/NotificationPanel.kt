@@ -1,6 +1,14 @@
 package com.mazwas.coverlauncher.feature.launcher.presentation
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,13 +30,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -36,6 +42,7 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.painterResource
@@ -49,6 +56,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mazwas.coverlauncher.R
 import com.mazwas.coverlauncher.core.designsystem.Label
@@ -61,46 +69,72 @@ import com.mazwas.coverlauncher.feature.launcher.domain.SoundMode
 import com.mazwas.coverlauncher.feature.launcher.domain.SystemStatus
 import com.mazwas.coverlauncher.feature.launcher.domain.relativeAge
 
-/** Quick toggles and notifications. Swipe up (or Back) to close; swipe a notification sideways to dismiss it. */
+/**
+ * Quick toggles and notifications. Collapsed: five tiles over the player and alerts. Swipe down (or pull past the top of
+ * the list) to expand: every tile, brightness at the bottom. Swipe up collapses, then closes; swipe a notification
+ * sideways to dismiss it.
+ */
 @Composable
 fun NotificationPanel(state: LauncherState, onAction: (LauncherAction) -> Unit, modifier: Modifier = Modifier) {
   val cutout = WindowInsets.displayCutout.asPaddingValues().calculateBottomPadding()
-  val pullToClose = rememberPullToClose(down = false) { onAction(LauncherAction.Close) }
+  var expanded by remember { mutableStateOf(false) } // view-only; every opening starts collapsed
+  val pullToClose = rememberPullPastEnd(down = false) { onAction(LauncherAction.Close) }
+  val pullToExpand = rememberPullPastEnd(down = true) { expanded = true }
   Column(
     modifier
       .fillMaxSize()
       .background(Color.Black)
-      .verticalSwipe(onUp = { onAction(LauncherAction.Close) })
+      .verticalSwipe(onUp = { if (expanded) expanded = false else onAction(LauncherAction.Close) }, onDown = { expanded = true })
       .padding(top = 14.dp),
   ) {
-    QuickToggles(state, onAction)
-    state.coverBrightness?.let { BrightnessRow(it, onAction) }
-    state.nowPlaying?.let { MediaRow(it, onAction) }
-    Row(
-      Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 6.dp),
-      verticalAlignment = Alignment.CenterVertically,
+    val rows = tiles(state.status).chunked(TILES_PER_ROW)
+    TileRow(rows.first(), onAction)
+    // the rest grows in under the first row; the alerts fade out of its way (fades and reveals only, no slides)
+    AnimatedVisibility(
+      expanded,
+      enter = fadeIn(tween(220)) + expandVertically(tween(220, easing = LinearOutSlowInEasing)),
+      exit = fadeOut(tween(150)) + shrinkVertically(tween(180, easing = FastOutLinearInEasing)),
     ) {
-      Label("alerts · ${state.notifications.size}", small = true, modifier = Modifier.weight(1f))
-      if (state.notifications.any { it.clearable }) {
-        Label(
-          "clear all", small = true, color = MaterialTheme.colorScheme.onSurface,
-          modifier = Modifier.clip(RoundedCornerShape(50)).clickable { onAction(LauncherAction.ClearAll) }.padding(8.dp),
-        )
+      Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        rows.drop(1).forEach { TileRow(it, onAction) }
+        state.coverBrightness?.let { BrightnessRow(it, onAction) }
       }
     }
-    when {
-      !state.notificationAccess -> Empty("notification access off", Modifier.weight(1f)) {
-        PillButton("open settings", onClick = { onAction(LauncherAction.OpenSettings) })
+    AnimatedVisibility(!expanded, Modifier.weight(1f), enter = fadeIn(tween(220)), exit = fadeOut(tween(150))) {
+      Column(Modifier.fillMaxSize()) {
+        Alerts(state, cutout, Modifier.weight(1f).nestedScroll(pullToClose).nestedScroll(pullToExpand), onAction)
       }
-      state.notifications.isEmpty() -> Empty("no alerts", Modifier.weight(1f))
-      else -> LazyColumn(
-        Modifier.weight(1f).nestedScroll(pullToClose),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = cutout + 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-      ) {
-        items(state.notifications, key = { it.key }) {
-          NotificationRow(it, state.now, onAction, Modifier.animateItem())
-        }
+    }
+  }
+}
+
+@Composable
+private fun Alerts(state: LauncherState, cutout: Dp, listModifier: Modifier, onAction: (LauncherAction) -> Unit) {
+  state.nowPlaying?.let { MediaRow(it, onAction) }
+  Row(
+    Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 6.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Label("alerts · ${state.notifications.size}", small = true, modifier = Modifier.weight(1f))
+    if (state.notifications.any { it.clearable }) {
+      Label(
+        "clear all", small = true, color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.clip(RoundedCornerShape(50)).clickable { onAction(LauncherAction.ClearAll) }.padding(8.dp),
+      )
+    }
+  }
+  when {
+    !state.notificationAccess -> Empty("notification access off", listModifier) {
+      PillButton("open settings", onClick = { onAction(LauncherAction.OpenSettings) })
+    }
+    state.notifications.isEmpty() -> Empty("no alerts", listModifier)
+    else -> LazyColumn(
+      listModifier,
+      contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = cutout + 8.dp),
+      verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      items(state.notifications, key = { it.key }) {
+        NotificationRow(it, state.now, onAction, Modifier.animateItem())
       }
     }
   }
@@ -123,34 +157,31 @@ private fun tiles(s: SystemStatus): List<Tile> = QuickToggle.entries.map { t ->
     }
     QuickToggle.Location -> R.drawable.ic_map_pin to "location"
     QuickToggle.Saver -> R.drawable.ic_leaf to "saver"
+    QuickToggle.Nfc -> R.drawable.ic_nfc to "nfc"
+    QuickToggle.Dark -> R.drawable.ic_contrast to "dark"
+    QuickToggle.KeepAwake -> R.drawable.ic_coffee to "awake"
   }
-  Tile(icon, label, s.isOn(t), LauncherAction.Toggle(t), LauncherAction.ToggleSettings(t).takeIf { t != QuickToggle.Torch })
+  val hold = LauncherAction.ToggleSettings(t).takeIf { t != QuickToggle.Torch && t != QuickToggle.KeepAwake }
+  Tile(icon, label, s.isOn(t), LauncherAction.Toggle(t), hold)
 } + Tile(R.drawable.ic_settings, "setup", false, LauncherAction.OpenSettings, null)
 
-/** Pages of five; swipe sideways for more. Tap toggles, long-press opens the system popup / settings page. */
+/** One row of up to five tiles. Tap toggles, long-press opens the system popup / settings page. */
 @Composable
-private fun QuickToggles(state: LauncherState, onAction: (LauncherAction) -> Unit) {
-  val pages = tiles(state.status).chunked(TILES_PER_PAGE)
-  val pager = rememberPagerState { pages.size }
-  HorizontalPager(pager, Modifier.fillMaxWidth()) { page ->
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-      pages[page].forEach { tile ->
+private fun TileRow(row: List<Tile>, onAction: (LauncherAction) -> Unit) {
+  Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+    row.forEach { tile ->
+      Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
         RoundToggle(
           tile.icon, tile.label, tile.on, onClick = { onAction(tile.tap) },
           onLongClick = tile.hold?.let { hold -> { onAction(hold) } },
         )
       }
     }
-  }
-  Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)) {
-    repeat(pages.size) {
-      val color = if (it == pager.currentPage) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline
-      Box(Modifier.size(5.dp).background(color, CircleShape))
-    }
+    repeat(TILES_PER_ROW - row.size) { Spacer(Modifier.weight(1f)) } // the last row keeps the same columns
   }
 }
 
-private const val TILES_PER_PAGE = 5
+private const val TILES_PER_ROW = 5
 
 /** The top media session: title, artist and previous / play-pause / next. */
 @Composable
@@ -197,6 +228,14 @@ private fun BrightnessRow(brightness: CoverBrightness, onAction: (LauncherAction
       onValueChange = { level = it },
       onValueChangeFinished = { onAction(LauncherAction.SetCoverBrightness(level.roundToInt())) },
       valueRange = 1f..255f,
+      // monochrome: Material's default inactive track is a tinted purple
+      colors = SliderDefaults.colors(
+        thumbColor = MaterialTheme.colorScheme.onSurface,
+        activeTrackColor = MaterialTheme.colorScheme.onSurface,
+        inactiveTrackColor = MaterialTheme.colorScheme.outlineVariant,
+        activeTickColor = MaterialTheme.colorScheme.outline,
+        inactiveTickColor = MaterialTheme.colorScheme.outline,
+      ),
       modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
     )
     Label(

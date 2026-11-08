@@ -56,7 +56,7 @@ import com.mazwas.coverlauncher.feature.launcher.domain.LaunchableApp
 @Composable
 fun AppDrawer(state: LauncherState, onAction: (LauncherAction) -> Unit, modifier: Modifier = Modifier) {
   val cutout = WindowInsets.displayCutout.asPaddingValues().calculateBottomPadding()
-  val pullToClose = rememberPullToClose(down = true) { onAction(LauncherAction.Close) }
+  val pullToClose = rememberPullPastEnd(down = true) { onAction(LauncherAction.Close) }
   Column(
     modifier
       .fillMaxSize()

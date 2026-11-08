@@ -7,12 +7,14 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.database.ContentObserver
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.location.LocationManager
 import android.media.AudioManager
 import android.net.wifi.WifiManager
+import android.nfc.NfcAdapter
 import android.os.BatteryManager
 import android.os.Handler
 import android.os.Looper
@@ -21,7 +23,9 @@ import android.provider.Settings
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import android.util.Log
+import com.mazwas.coverlauncher.core.system.KEEP_AWAKE
 import com.mazwas.coverlauncher.core.system.Shell
+import com.mazwas.coverlauncher.core.system.keepAwakePrefs
 import com.mazwas.coverlauncher.core.system.TAG
 import com.mazwas.coverlauncher.feature.launcher.domain.CoverBrightness
 import com.mazwas.coverlauncher.feature.launcher.domain.QuickToggle
@@ -45,6 +49,7 @@ class SystemStatusSource(private val context: Context) {
   private val audio = context.getSystemService(AudioManager::class.java)
   private val location = context.getSystemService(LocationManager::class.java)
   private val power = context.getSystemService(PowerManager::class.java)
+  private val nfc: NfcAdapter? = NfcAdapter.getDefaultAdapter(context)
 
   private val base = combine(
     broadcasts(Intent.ACTION_BATTERY_CHANGED),
@@ -75,10 +80,27 @@ class SystemStatusSource(private val context: Context) {
     combine(
       flag(LocationManager.MODE_CHANGED_ACTION) { location.isLocationEnabled },
       flag(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED) { power.isPowerSaveMode },
-      ::Pair,
+      flag(NfcAdapter.ACTION_ADAPTER_STATE_CHANGED) { runCatching { nfc?.isEnabled == true }.getOrDefault(false) },
+      // night mode has no broadcast of its own; the app's configuration follows it
+      flag(Intent.ACTION_CONFIGURATION_CHANGED) { context.resources.configuration.isNightModeActive },
+      keepAwake(),
+      ::Extra,
     ),
-  ) { status, dataOn, airplaneOn, sound, (locationOn, saverOn) ->
-    status.copy(dataOn = dataOn, airplaneOn = airplaneOn, sound = sound, locationOn = locationOn, saverOn = saverOn)
+  ) { status, dataOn, airplaneOn, sound, extra ->
+    status.copy(
+      dataOn = dataOn, airplaneOn = airplaneOn, sound = sound, locationOn = extra.location, saverOn = extra.saver,
+      nfcOn = extra.nfc, darkOn = extra.dark, keepAwakeOn = extra.keepAwake,
+    )
+  }
+
+  private data class Extra(val location: Boolean, val saver: Boolean, val nfc: Boolean, val dark: Boolean, val keepAwake: Boolean)
+
+  private fun keepAwake(): Flow<Boolean> = callbackFlow {
+    val prefs = context.keepAwakePrefs()
+    val changed = SharedPreferences.OnSharedPreferenceChangeListener { p, key -> if (key == KEEP_AWAKE) trySend(p.getBoolean(key, false)) }
+    trySend(prefs.getBoolean(KEEP_AWAKE, false))
+    prefs.registerOnSharedPreferenceChangeListener(changed)
+    awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(changed) }
   }
 
   /** Emits the sticky intent (or null) right away, then every broadcast. */
@@ -141,6 +163,10 @@ class SystemStatusSource(private val context: Context) {
       QuickToggle.Saver -> Shell.exec("cmd", "power", "set-mode", if (on) "1" else "0")
       QuickToggle.Torch -> torchCamera()?.let { runCatching { camera.setTorchMode(it, on) } }
       QuickToggle.Sound -> setSound(if (on) SoundMode.Ring else SoundMode.Silent)
+      // not `svc nfc`: it gets killed on this phone (exit 137, also from adb). "persist" keeps it off across reboots.
+      QuickToggle.Nfc -> if (on) Shell.exec("cmd", "nfc", "enable-nfc") else Shell.exec("cmd", "nfc", "disable-nfc", "persist")
+      QuickToggle.Dark -> Shell.exec("cmd", "uimode", "night", if (on) "yes" else "no")
+      QuickToggle.KeepAwake -> context.keepAwakePrefs().edit().putBoolean(KEEP_AWAKE, on).apply()
     }
   }
 

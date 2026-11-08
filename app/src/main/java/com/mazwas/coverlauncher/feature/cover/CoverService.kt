@@ -5,6 +5,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
+import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.Looper
@@ -12,10 +14,15 @@ import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import android.view.Display
+import android.view.View
+import android.view.WindowManager
+import android.view.WindowManager.LayoutParams
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.mazwas.coverlauncher.feature.cover.ShizukuAutoStart.Step
 import com.mazwas.coverlauncher.core.system.COVER_DISPLAY
+import com.mazwas.coverlauncher.core.system.KEEP_AWAKE
+import com.mazwas.coverlauncher.core.system.keepAwakePrefs
 import com.mazwas.coverlauncher.core.system.MAIN_DISPLAY
 import com.mazwas.coverlauncher.core.system.TAG
 import com.mazwas.coverlauncher.core.system.coverOptions
@@ -47,14 +54,46 @@ class CoverService : AccessibilityService() {
   }
 
   override fun onServiceConnected() {
+    connected = true
     registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF))
+    keepAwakePrefs().registerOnSharedPreferenceChangeListener(awakeChanged)
+    holdCoverOn()
     // boot / reinstall left no launcher task: create it now so the cover wakes to it (it shows over the lock screen)
     showLauncher()
   }
 
   override fun onDestroy() {
+    connected = false
     unregisterReceiver(screenOff)
+    keepAwakePrefs().unregisterOnSharedPreferenceChangeListener(awakeChanged)
+    releaseCover()
     super.onDestroy()
+  }
+
+  // Keep-awake tile: an invisible 1×1 window on the cover with FLAG_KEEP_SCREEN_ON stops the cover timing out, whatever
+  // app is in front. The power key still turns it off.
+  private var awake: View? = null
+  private val awakeChanged = SharedPreferences.OnSharedPreferenceChangeListener { _, key -> if (key == KEEP_AWAKE) holdCoverOn() }
+
+  private fun holdCoverOn() {
+    if (!keepAwakePrefs().getBoolean(KEEP_AWAKE, false)) return releaseCover()
+    if (awake != null) return
+    val cover = displays.getDisplay(COVER_DISPLAY) ?: return
+    val window = createDisplayContext(cover).createWindowContext(LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, null)
+    val view = View(window)
+    runCatching {
+      window.getSystemService(WindowManager::class.java).addView(view, LayoutParams(
+        1, 1, LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+        LayoutParams.FLAG_NOT_FOCUSABLE or LayoutParams.FLAG_NOT_TOUCHABLE or LayoutParams.FLAG_KEEP_SCREEN_ON,
+        PixelFormat.TRANSPARENT,
+      ))
+      awake = view
+    }.onFailure { Log.w(TAG, "keep awake window failed", it) }
+  }
+
+  private fun releaseCover() {
+    awake?.let { runCatching { it.context.getSystemService(WindowManager::class.java).removeView(it) } }
+    awake = null
   }
 
   override fun onAccessibilityEvent(e: AccessibilityEvent) {
@@ -130,13 +169,18 @@ class CoverService : AccessibilityService() {
 
   override fun onInterrupt() {}
 
-  private companion object {
-    const val SUB_HOME = "com.android.systemui.subscreen.SubHomeActivity"
-    const val SUB_FLASHLIGHT = "com.android.systemui.qp.flashlight.SubroomFlashLightSettingsActivity"
+  companion object {
+    /** True while the system has this service bound (same process as the app); Grants rebinds it when it isn't. */
+    @Volatile
+    var connected = false
+      private set
+
+    private const val SUB_HOME = "com.android.systemui.subscreen.SubHomeActivity"
+    private const val SUB_FLASHLIGHT = "com.android.systemui.qp.flashlight.SubroomFlashLightSettingsActivity"
     // what normally lives on the main screen; never moved
-    val MAIN_SYSTEM = setOf(null, "com.sec.android.app.launcher", "com.android.systemui")
+    private val MAIN_SYSTEM = setOf(null, "com.sec.android.app.launcher", "com.android.systemui")
     // "Allow USB/wireless debugging?" open only on the main screen: moved to the cover so the user answers them there
     // (never answered for them: that prompt is what keeps an unknown computer from getting a shell).
-    val DEBUG_PROMPTS = setOf("com.android.systemui.usb.UsbDebuggingActivity", "com.android.systemui.wifi.WifiDebuggingActivity")
+    private val DEBUG_PROMPTS = setOf("com.android.systemui.usb.UsbDebuggingActivity", "com.android.systemui.wifi.WifiDebuggingActivity")
   }
 }

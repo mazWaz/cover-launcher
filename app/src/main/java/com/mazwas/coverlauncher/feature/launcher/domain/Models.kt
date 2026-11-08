@@ -42,6 +42,9 @@ data class SystemStatus(
   val sound: SoundMode = SoundMode.Ring,
   val locationOn: Boolean = false,
   val saverOn: Boolean = false,
+  val nfcOn: Boolean = false,
+  val darkOn: Boolean = false,
+  val keepAwakeOn: Boolean = false,
 ) {
   fun isOn(toggle: QuickToggle): Boolean = when (toggle) {
     QuickToggle.Wifi -> wifiOn
@@ -53,6 +56,9 @@ data class SystemStatus(
     QuickToggle.Sound -> sound != SoundMode.Silent
     QuickToggle.Location -> locationOn
     QuickToggle.Saver -> saverOn
+    QuickToggle.Nfc -> nfcOn
+    QuickToggle.Dark -> darkOn
+    QuickToggle.KeepAwake -> keepAwakeOn
   }
 }
 
@@ -81,8 +87,8 @@ fun parseCoverBrightness(out: String?): CoverBrightness? {
   return CoverBrightness(level.coerceIn(1, 255), auto = lines.getOrNull(1) == "1")
 }
 
-/** Quick settings tiles in panel order; the panel pages them by five. */
-enum class QuickToggle { Wifi, Bluetooth, Data, Torch, Dnd, Airplane, Sound, Location, Saver }
+/** Quick settings tiles in panel order; the collapsed panel shows the first five. */
+enum class QuickToggle { Wifi, Bluetooth, Data, Torch, Dnd, Airplane, Sound, Location, Saver, Nfc, Dark, KeepAwake }
 
 /** Something to open on the cover. */
 sealed interface OpenTarget {

@@ -39,7 +39,9 @@ class CoverOpener(private val context: Context, private val notifications: Notif
     QuickToggle.Airplane -> Settings.ACTION_AIRPLANE_MODE_SETTINGS
     QuickToggle.Location -> Settings.ACTION_LOCATION_SOURCE_SETTINGS
     QuickToggle.Saver -> Settings.ACTION_BATTERY_SAVER_SETTINGS
-    QuickToggle.Torch -> null
+    QuickToggle.Nfc -> Settings.ACTION_NFC_SETTINGS
+    QuickToggle.Dark -> Settings.ACTION_DISPLAY_SETTINGS
+    QuickToggle.Torch, QuickToggle.KeepAwake -> null
   }
 
   private fun settings(action: String) {

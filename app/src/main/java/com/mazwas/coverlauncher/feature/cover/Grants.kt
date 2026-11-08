@@ -2,6 +2,8 @@ package com.mazwas.coverlauncher.feature.cover
 
 import android.content.ComponentName
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import com.mazwas.coverlauncher.core.system.Shell
 import com.mazwas.coverlauncher.core.system.keepFolded
@@ -28,7 +30,19 @@ class Grants(private val context: Context) {
       Shell.exec("settings", "put", "secure", Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, next.joinToString(":"))
       Shell.exec("settings", "put", "secure", Settings.Secure.ACCESSIBILITY_ENABLED, "1")
     }
+    // After an update (`adb install -r`) the system left CoverService enabled but stuck "binding" (seen 2026-11-08: no
+    // ServiceRecord, nothing retried). Still not connected a moment later: switch it off and on, which rebinds it.
+    main.postDelayed({ if (!CoverService.connected && coverServiceEnabled()) rebindCoverService() }, 5_000)
   }
+
+  private fun rebindCoverService() {
+    val all = enabledServices()
+    val without = all.filterNot { it == coverService }.joinToString(":")
+    val key = Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+    Shell.exec("sh", "-c", "settings put secure $key '$without'; sleep 1; settings put secure $key '${all.joinToString(":")}'")
+  }
+
+  private val main = Handler(Looper.getMainLooper())
 
   /** Whether CoverService (the part that keeps the launcher the cover home) is switched on. */
   fun coverServiceEnabled(): Boolean = coverService in enabledServices()

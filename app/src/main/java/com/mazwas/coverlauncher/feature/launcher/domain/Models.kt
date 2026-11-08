@@ -17,6 +17,7 @@ data class LauncherNotification(
   val clearable: Boolean,
   val actions: List<String> = emptyList(), // button titles; the index is the app's own action index
   val media: Boolean = false, // carries a media session (the panel's player can stand in for it)
+  val reply: Int = -1, // index in [actions] of the button that takes typed text (Reply); -1: none
 )
 
 /**
@@ -189,6 +190,8 @@ sealed interface OpenTarget {
   data class Uninstall(val packageName: String) : OpenTarget
   data class Notification(val key: String) : OpenTarget
   data class NotificationAction(val key: String, val index: Int) : OpenTarget
+  /** [text] sent through the notification's Reply button [index], as if typed in the app. */
+  data class Reply(val key: String, val index: Int, val text: String) : OpenTarget
   /** A quick tile's long-press: its system popup or settings page. */
   data class Settings(val toggle: QuickToggle) : OpenTarget
 }
@@ -209,6 +212,7 @@ data class LauncherSettings(
   val hiddenTiles: Set<String> = emptySet(), // QuickToggle names left out of the panel
   val aod: Boolean = false, // our AOD over Samsung's while the cover dozes
   val banking: Set<String> = emptySet(), // packages CoverService steps aside for (banking mode)
+  val deepSleep: Boolean = false, // force Doze's deep idle a while after the cover goes off
 )
 
 const val DOCK_SIZE = 4

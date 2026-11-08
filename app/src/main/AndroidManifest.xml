@@ -11,6 +11,8 @@
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
   <!-- NfcAdapter.isEnabled for the NFC tile (normal permission, granted at install) -->
   <uses-permission android:name="android.permission.NFC" />
+  <!-- dictating notification replies; granted through Shizuku (Grants) -->
+  <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
   <application
     android:name=".App"

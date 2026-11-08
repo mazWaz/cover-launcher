@@ -89,7 +89,10 @@ class CoverPopup(
     hide()
     when (action) {
       is LauncherAction.OpenNotification -> open(action.key, -1)
-      is LauncherAction.NotificationAction -> open(action.key, action.index)
+      // the pop-up can't take typing (not focusable): Reply opens the launcher's reply box
+      is LauncherAction.NotificationAction -> if (note.value?.let { it.key == action.key && it.reply == action.index } == true) {
+        service.startActivity(LauncherActivity.reply(service, action.key), coverOptions())
+      } else open(action.key, action.index)
       is LauncherAction.Dismiss -> notifications.dismiss(action.key)
       else -> Unit
     }

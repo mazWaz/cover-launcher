@@ -1,10 +1,12 @@
 package com.mazwas.coverlauncher.feature.launcher.data
 
 import android.app.Notification
+import android.app.RemoteInput
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
 import com.mazwas.coverlauncher.core.system.Shell
@@ -31,6 +33,7 @@ class CoverOpener(private val context: Context, private val notifications: Notif
       is OpenTarget.Uninstall -> start(Intent(Intent.ACTION_DELETE, packageUri(target.packageName)))
       is OpenTarget.Notification -> notification(target.key)
       is OpenTarget.NotificationAction -> action(target.key, target.index)
+      is OpenTarget.Reply -> reply(target.key, target.index, target.text)
       is OpenTarget.Settings -> settingsAction(target.toggle)?.let(::settings)
     }
   }
@@ -79,13 +82,23 @@ class CoverOpener(private val context: Context, private val notifications: Notif
     if (sbn.notification.flags and Notification.FLAG_AUTO_CANCEL != 0) notifications.dismiss(key)
   }
 
-  // shortcut: a Reply button opens the notification (the app's own text box) instead of an inline one; add RemoteInput
-  // here once typing in the panel is wanted.
+  // Reply buttons with a text box come here only through reply(); one that wants an input we can't give (fixed
+  // choices only) opens the notification instead.
   private fun action(key: String, index: Int) {
     val action = notifications.get(key)?.notification?.actions?.getOrNull(index) ?: return
     if (!action.remoteInputs.isNullOrEmpty()) return notification(key)
     runCatching { action.actionIntent?.send(context, 0, null, null, null, null, coverOptions()) }
       .onFailure { Log.w(TAG, "notification action failed", it) }
+  }
+
+  /** [text] through the button's free-form RemoteInput, as the app's own notification reply would send it. */
+  private fun reply(key: String, index: Int, text: String) {
+    val action = notifications.get(key)?.notification?.actions?.getOrNull(index) ?: return
+    val inputs = action.remoteInputs.orEmpty().filter { it.allowFreeFormInput }.ifEmpty { return }
+    val intent = Intent()
+    RemoteInput.addResultsToIntent(inputs.toTypedArray(), intent, Bundle().apply { inputs.forEach { putCharSequence(it.resultKey, text) } })
+    RemoteInput.setResultsSource(intent, RemoteInput.SOURCE_FREE_FORM_INPUT)
+    runCatching { action.actionIntent?.send(context, 0, intent) }.onFailure { Log.w(TAG, "reply failed", it) }
   }
 
   private fun start(intent: Intent) = runCatching {

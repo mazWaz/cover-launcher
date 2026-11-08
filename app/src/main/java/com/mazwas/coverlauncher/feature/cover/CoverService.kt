@@ -1,5 +1,6 @@
 package com.mazwas.coverlauncher.feature.cover
 
+import android.app.AlarmManager
 import android.accessibilityservice.AccessibilityService
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -12,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.Process
+import android.os.BatteryManager
 import android.os.SystemClock
 import android.util.Log
 import android.view.Display
@@ -26,6 +28,7 @@ import com.mazwas.coverlauncher.core.system.KEEP_AWAKE
 import com.mazwas.coverlauncher.core.system.ROTATE_AUTO
 import com.mazwas.coverlauncher.core.system.ROTATE_LOCK
 import com.mazwas.coverlauncher.core.system.BANKING
+import com.mazwas.coverlauncher.core.system.Shell
 import com.mazwas.coverlauncher.core.system.coverPrefs
 import com.mazwas.coverlauncher.core.system.MAIN_DISPLAY
 import com.mazwas.coverlauncher.core.system.TAG
@@ -62,7 +65,7 @@ class CoverService : AccessibilityService() {
   private val settings: SettingsStore by inject()
   private val popup by lazy { CoverPopup(this, get(), notifications, get()) }
   private val display by lazy { CoverDisplay(this) { rootInActiveWindow?.packageName } }
-  private val aod by lazy { CoverAod(this, get(), get(), get(), notifications) }
+  private val aod by lazy { CoverAod(this, get(), get(), get(), notifications, get()) }
   private val system: SystemStatusSource by inject()
   private var heat = Heat.Normal
   private val grants: Grants by inject()
@@ -76,7 +79,11 @@ class CoverService : AccessibilityService() {
   // ponytail: also restarts on every screen-off while Shizuku isn't running at all; cheap, cover is off.
   private val screenOff = object : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-      scope.launch { if (settings.settings.first().aod) aod.show() }
+      scope.launch {
+        val s = settings.settings.first()
+        if (s.aod) aod.show()
+        if (s.deepSleep && !getSystemService(BatteryManager::class.java).isCharging) scheduleDeepSleep()
+      }
       if (Shizuku.pingBinder()) return
       Log.i(TAG, "no Shizuku binder -> restarting")
       Process.killProcess(Process.myPid())
@@ -84,7 +91,10 @@ class CoverService : AccessibilityService() {
   }
 
   private val screenOn = object : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) = aod.hide()
+    override fun onReceive(context: Context, intent: Intent) {
+      aod.hide()
+      wakeFromDeepSleep()
+    }
   }
 
   override fun onServiceConnected() {
@@ -124,6 +134,27 @@ class CoverService : AccessibilityService() {
     coverPrefs().unregisterOnSharedPreferenceChangeListener(tilesChanged)
     releaseCover()
     super.onDestroy()
+  }
+
+  // Deep sleep (opt-in): Doze's deep idle only comes after ~30+ min without motion, and this phone rarely lies still
+  // that long. Forced DEEP_SLEEP_AFTER the cover went off on battery, undone when it comes on (a forced idle would
+  // otherwise outlast the screen). An alarm, not a Handler: uptime stops while the CPU sleeps. Inexact: no permission.
+  private var deepForced = false
+  private val deepSleep = AlarmManager.OnAlarmListener {
+    deepForced = true
+    Log.i(TAG, "cover off a while -> deep idle")
+    Shell.exec("dumpsys", "deviceidle", "force-idle", "deep")
+  }
+
+  private fun scheduleDeepSleep() = getSystemService(AlarmManager::class.java)
+    .set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + DEEP_SLEEP_AFTER, "coverlauncher:deep", deepSleep, null)
+
+  private fun wakeFromDeepSleep() {
+    getSystemService(AlarmManager::class.java).cancel(deepSleep)
+    if (!deepForced) return
+    deepForced = false
+    // unforce alone left it idle until the PIN unlock (Doze judges "screen on" by the dead main display): motion wakes it
+    Shell.exec("sh", "-c", "dumpsys deviceidle unforce; dumpsys deviceidle motion")
   }
 
   /** Warm: a warning card. Hot: also keep awake and torch off and a dimmer cover; nothing else here makes heat. */
@@ -264,6 +295,7 @@ class CoverService : AccessibilityService() {
 
     private const val HEAT_KEY = "coverlauncher:heat"
     private const val HOT_BRIGHTNESS = 40 // of 255
+    private const val DEEP_SLEEP_AFTER = 5 * 60_000L
     private const val SUB_HOME = "com.android.systemui.subscreen.SubHomeActivity"
     private const val SUB_FLASHLIGHT = "com.android.systemui.qp.flashlight.SubroomFlashLightSettingsActivity"
     // what normally lives on the main screen; never moved

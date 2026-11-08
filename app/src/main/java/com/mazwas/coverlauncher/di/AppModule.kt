@@ -9,6 +9,7 @@ import com.mazwas.coverlauncher.feature.launcher.data.MediaSource
 import com.mazwas.coverlauncher.feature.launcher.data.NotificationStore
 import com.mazwas.coverlauncher.feature.launcher.data.SettingsStore
 import com.mazwas.coverlauncher.feature.launcher.data.SystemStatusSource
+import com.mazwas.coverlauncher.feature.launcher.data.VoiceInput
 import com.mazwas.coverlauncher.feature.launcher.presentation.LauncherViewModel
 import com.mazwas.coverlauncher.feature.settings.presentation.SettingsViewModel
 import org.koin.core.module.dsl.singleOf
@@ -25,6 +26,7 @@ val appModule = module {
   singleOf(::MediaSource)
   singleOf(::IconLoader)
   singleOf(::CoverOpener)
+  singleOf(::VoiceInput)
   viewModelOf(::LauncherViewModel)
   viewModelOf(::SettingsViewModel)
 }

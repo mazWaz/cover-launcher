@@ -40,6 +40,7 @@ class SettingsStore(private val context: Context) {
   private val hiddenTilesKey = stringSetPreferencesKey("hidden_tiles")
   private val aodKey = booleanPreferencesKey("aod")
   private val bankingKey = stringSetPreferencesKey("banking")
+  private val deepSleepKey = booleanPreferencesKey("deep_sleep")
 
   val wallpaperFile = File(context.filesDir, "wallpaper.jpg")
 
@@ -58,6 +59,7 @@ class SettingsStore(private val context: Context) {
       hiddenTiles = p[hiddenTilesKey].orEmpty(),
       aod = p[aodKey] ?: false,
       banking = p[bankingKey].orEmpty(),
+      deepSleep = p[deepSleepKey] ?: false,
     )
   }
 
@@ -66,6 +68,7 @@ class SettingsStore(private val context: Context) {
   suspend fun setDotFilter(on: Boolean) = context.dataStore.edit { it[dotsKey] = on }
   suspend fun setPopups(on: Boolean) = context.dataStore.edit { it[popupsKey] = on }
   suspend fun setAod(on: Boolean) = context.dataStore.edit { it[aodKey] = on }
+  suspend fun setDeepSleep(on: Boolean) = context.dataStore.edit { it[deepSleepKey] = on }
 
   /** [rotation] null: the app follows the rotate tile again. */
   suspend fun setAppRotation(pkg: String, rotation: Int?) = context.dataStore.edit {

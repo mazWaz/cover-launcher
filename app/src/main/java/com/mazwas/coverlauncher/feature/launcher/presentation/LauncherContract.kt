@@ -35,6 +35,9 @@ data class LauncherState(
   val appDensity: Map<String, Int> = emptyMap(), // package → its own dpi
   val restricted: Set<String> = emptySet(), // packages kept from running in the background
   val banking: Set<String> = emptySet(), // packages opened in banking mode
+  val replying: LauncherNotification? = null, // the reply box is open for it
+  val replyText: String = "",
+  val listening: Boolean = false, // dictating into the reply box
   val tiles: List<QuickToggle> = QuickToggle.entries, // panel order, hidden ones left out
 )
 
@@ -45,6 +48,11 @@ sealed interface LauncherAction {
   data object OpenSettings : LauncherAction
   data class Search(val query: String) : LauncherAction
   data object LaunchFirst : LauncherAction
+  data class StartReply(val key: String) : LauncherAction
+  data class ReplyText(val text: String) : LauncherAction
+  data object SendReply : LauncherAction
+  data object Dictate : LauncherAction
+  data object CloseReply : LauncherAction
   data class Launch(val app: LaunchableApp) : LauncherAction
   data class TogglePin(val app: LaunchableApp) : LauncherAction
   data class CycleRotation(val app: LaunchableApp) : LauncherAction

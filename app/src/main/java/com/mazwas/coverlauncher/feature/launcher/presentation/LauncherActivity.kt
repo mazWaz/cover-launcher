@@ -19,6 +19,7 @@ import com.mazwas.coverlauncher.feature.launcher.data.CoverOpener
 import com.mazwas.coverlauncher.feature.launcher.data.IconLoader
 import com.mazwas.coverlauncher.feature.launcher.domain.OpenTarget
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.koin.android.ext.android.inject
 
 /** The cover's home. CoverService brings it back whenever Samsung's cover home would show. */
@@ -26,6 +27,7 @@ class LauncherActivity : ComponentActivity() {
   private val opener: CoverOpener by inject()
   private val icons: IconLoader by inject()
   private val home = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+  private val reply = MutableStateFlow<String?>(null) // a notification key from the pop-up's Reply
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -37,7 +39,7 @@ class LauncherActivity : ComponentActivity() {
     setContent {
       NothingTheme {
         CompositionLocalProvider(LocalIconLoader provides icons) {
-          AppNavHost(home = home, onOpen = { target -> unlockThen { opener.open(target) } })
+          AppNavHost(home = home, reply = reply, onOpen = { target -> unlockThen { opener.open(target) } })
         }
       }
     }
@@ -72,6 +74,7 @@ class LauncherActivity : ComponentActivity() {
   /** The pop-up hands over its tap when the cover is locked: unlocking needs an activity. */
   private fun openFromPopup(intent: Intent) {
     val key = intent.getStringExtra(OPEN_KEY) ?: return
+    if (intent.getBooleanExtra(REPLY, false)) return unlockThen { reply.value = key }
     val action = intent.getIntExtra(OPEN_ACTION, -1)
     unlockThen { opener.open(if (action < 0) OpenTarget.Notification(key) else OpenTarget.NotificationAction(key, action)) }
   }
@@ -79,10 +82,15 @@ class LauncherActivity : ComponentActivity() {
   companion object {
     private const val OPEN_KEY = "open_notification"
     private const val OPEN_ACTION = "open_action"
+    private const val REPLY = "reply"
 
     /** Opens notification [key] (or presses its button [action]) after unlocking. Start it with coverOptions(). */
     fun openNotification(context: Context, key: String, action: Int = -1): Intent =
       Intent(context, LauncherActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         .putExtra(OPEN_KEY, key).putExtra(OPEN_ACTION, action)
+
+    /** The reply box for notification [key], after unlocking: typing needs our activity. Start it with coverOptions(). */
+    fun reply(context: Context, key: String): Intent =
+      Intent(context, LauncherActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra(OPEN_KEY, key).putExtra(REPLY, true)
   }
 }

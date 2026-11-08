@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -28,15 +30,23 @@ import com.mazwas.coverlauncher.feature.launcher.domain.LauncherNotification
 import com.mazwas.coverlauncher.feature.launcher.domain.NowPlaying
 import com.mazwas.coverlauncher.feature.launcher.domain.OpenTarget
 import com.mazwas.coverlauncher.feature.launcher.domain.SystemStatus
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
 fun LauncherRoot(
   onOpen: (OpenTarget) -> Unit,
   onSettings: () -> Unit,
+  reply: MutableStateFlow<String?>,
   viewModel: LauncherViewModel = koinViewModel(),
 ) {
   val state by viewModel.state.collectAsStateWithLifecycle()
+  // the pop-up's Reply: taken once resumed, after the ON_START reset below has run
+  val replyKey by reply.collectAsStateWithLifecycle(minActiveState = Lifecycle.State.RESUMED)
+  LaunchedEffect(replyKey) {
+    replyKey?.let { viewModel.onAction(LauncherAction.StartReply(it)) }
+    reply.value = null
+  }
   ObserveAsEvents(viewModel.events) { event ->
     when (event) {
       is LauncherEvent.Open -> onOpen(event.target)
@@ -51,7 +61,7 @@ fun LauncherRoot(
     if (stoppedAt != 0L && SystemClock.uptimeMillis() - stoppedAt > 1_000) viewModel.onAction(LauncherAction.Close)
   }
   // we are the cover's home: Back only closes overlays
-  BackHandler { viewModel.onAction(LauncherAction.Close) }
+  BackHandler { viewModel.onAction(if (state.replying != null) LauncherAction.CloseReply else LauncherAction.Close) }
   LauncherScreen(state, viewModel::onAction)
 }
 
@@ -70,6 +80,16 @@ fun LauncherScreen(state: LauncherState, onAction: (LauncherAction) -> Unit) {
       enter = fadeIn(tween(200)),
       exit = fadeOut(tween(150)),
     ) { NotificationPanel(state, onAction) }
+    AnimatedVisibility(
+      visible = state.replying != null,
+      enter = fadeIn(tween(200)),
+      exit = fadeOut(tween(150)),
+    ) {
+      // fading out after it closed: keep showing the last one
+      var last by remember { mutableStateOf(state.replying) }
+      state.replying?.let { last = it }
+      last?.let { ReplySheet(it, state.replyText, state.listening, onAction) }
+    }
   }
 }
 

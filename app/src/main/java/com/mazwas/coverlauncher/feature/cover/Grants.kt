@@ -1,6 +1,8 @@
 package com.mazwas.coverlauncher.feature.cover
 
+import android.Manifest
 import android.content.ComponentName
+import android.content.pm.PackageManager
 import android.content.Context
 import android.app.NotificationManager
 import android.content.pm.LauncherApps
@@ -31,6 +33,8 @@ class Grants(private val context: Context) {
     // lets CoverService start the launcher from the background
     Shell.exec("appops", "set", pkg, "SYSTEM_ALERT_WINDOW", "allow")
     Shell.exec("cmd", "notification", "allow_listener", ComponentName(context, NotificationListener::class.java).flattenToString())
+    // dictating replies (VoiceInput)
+    Shell.exec("pm", "grant", pkg, Manifest.permission.RECORD_AUDIO)
     // the sound tile's silent mode
     Shell.exec("cmd", "notification", "allow_dnd", pkg)
 
@@ -72,6 +76,7 @@ class Grants(private val context: Context) {
       SetupCheck("notifications", listenerConnected),
       SetupCheck("cover service", coverServiceEnabled()),
       SetupCheck("overlay", Settings.canDrawOverlays(context)),
+      SetupCheck("microphone", context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED),
       SetupCheck("do not disturb", context.getSystemService(NotificationManager::class.java).isNotificationPolicyAccessGranted),
       SetupCheck("fold keeper", !sh("pgrep -f '[c]overlauncher-fold'").isNullOrEmpty()),
       SetupCheck("samsung pop-ups off", sh("settings get system edge_lighting; settings get secure cover_screen_show_notification") == "0\n0")

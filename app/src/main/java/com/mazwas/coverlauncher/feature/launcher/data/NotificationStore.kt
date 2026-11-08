@@ -84,7 +84,7 @@ class NotificationStore(private val context: Context) {
         val public = notification.publicVersion?.extras
         val title = public?.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
         val text = public?.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
-        full.copy(title = title, text = text.ifBlank { if (title.isBlank()) "contents hidden" else "" }, actions = emptyList())
+        full.copy(title = title, text = text.ifBlank { if (title.isBlank()) "contents hidden" else "" }, actions = emptyList(), reply = -1)
       }
     }
   }
@@ -105,7 +105,9 @@ class NotificationStore(private val context: Context) {
     if (title.isBlank() && text.isBlank()) return null
     val actions = notificationActions(n.category, n.actions.orEmpty().map { it.title?.toString().orEmpty() })
     val media = extras.containsKey(Notification.EXTRA_MEDIA_SESSION)
-    return LauncherNotification(key, packageName, label(packageName), title, text, postTime, isClearable, actions, media)
+    // the button that takes typed text: the reply box instead of opening the app
+    val reply = n.actions.orEmpty().take(actions.size).indexOfFirst { a -> a.remoteInputs.orEmpty().any { it.allowFreeFormInput } }
+    return LauncherNotification(key, packageName, label(packageName), title, text, postTime, isClearable, actions, media, reply)
   }
 
   private fun label(pkg: String): String = labels.getOrPut(pkg) {

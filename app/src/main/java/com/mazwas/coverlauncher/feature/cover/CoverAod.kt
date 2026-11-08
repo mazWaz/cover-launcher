@@ -8,6 +8,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.mazwas.coverlauncher.core.system.Clock
 import com.mazwas.coverlauncher.feature.launcher.data.IconLoader
+import com.mazwas.coverlauncher.feature.launcher.data.MediaSource
 import com.mazwas.coverlauncher.feature.launcher.data.NotificationStore
 import com.mazwas.coverlauncher.feature.launcher.data.SystemStatusSource
 import com.mazwas.coverlauncher.feature.launcher.presentation.AodScreen
@@ -25,10 +26,11 @@ class CoverAod(
   private val clock: Clock,
   system: SystemStatusSource,
   notifications: NotificationStore,
+  media: MediaSource,
 ) {
   private var view: View? = null
-  private val state = combine(clock.ticks, system.status, notifications.notifications) { now, status, notes ->
-    LauncherState(time = clock.time(now), date = clock.date(now), status = status, notifications = notes)
+  private val state = combine(clock.ticks, system.status, notifications.notifications, media.nowPlaying) { now, status, notes, playing ->
+    LauncherState(time = clock.time(now), date = clock.date(now), status = status, notifications = notes, nowPlaying = playing)
   }
 
   fun show() {

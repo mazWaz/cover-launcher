@@ -33,6 +33,7 @@ data class SettingsState(
   val iconStyle: IconStyle = IconStyle.Mono,
   val popups: Boolean = false,
   val aod: Boolean = false,
+  val deepSleep: Boolean = false,
   val density: Int? = null, // the cover's dpi; null = its own 320
   val fontScale: Float = 1f,
   val animationScale: Float = 1f,
@@ -53,6 +54,7 @@ sealed interface SettingsAction {
   data class SetIconStyle(val style: IconStyle) : SettingsAction
   data class SetPopups(val on: Boolean) : SettingsAction
   data class SetAod(val on: Boolean) : SettingsAction
+  data class SetDeepSleep(val on: Boolean) : SettingsAction
   data class SetDensity(val dpi: Int?) : SettingsAction
   data class SetFontScale(val scale: Float) : SettingsAction
   data class SetAnimationScale(val scale: Float) : SettingsAction
@@ -90,7 +92,7 @@ class SettingsViewModel(
   val state: StateFlow<SettingsState> = combine(settings.settings, notifications.connected, local) { s, access, l ->
     SettingsState(
       hasWallpaper = s.wallpaperVersion != 0L, dotFilter = s.dotFilter, iconStyle = s.iconStyle, popups = s.popups,
-      aod = s.aod, density = s.density, fontScale = l.fontScale, animationScale = l.animationScale,
+      aod = s.aod, deepSleep = s.deepSleep, density = s.density, fontScale = l.fontScale, animationScale = l.animationScale,
       importing = l.importing, shizuku = l.shizuku, notificationAccess = access, coverService = l.coverService,
       checks = l.checks, tiles = tileOrder(s.tiles), hiddenTiles = s.hiddenTiles,
     )
@@ -113,6 +115,7 @@ class SettingsViewModel(
         settings.setPopups(action.on)
       }
       is SettingsAction.SetAod -> viewModelScope.launch { settings.setAod(action.on) }
+      is SettingsAction.SetDeepSleep -> viewModelScope.launch { settings.setDeepSleep(action.on) }
       // CoverDisplay applies it (through the shell) for every app without its own
       is SettingsAction.SetDensity -> viewModelScope.launch { settings.setDensity(action.dpi) }
       is SettingsAction.SetFontScale -> {

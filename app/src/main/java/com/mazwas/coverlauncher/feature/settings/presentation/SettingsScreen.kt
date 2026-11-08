@@ -137,6 +137,13 @@ fun SettingsScreen(state: SettingsState, onAction: (SettingsAction) -> Unit) {
       else Label("needs shizuku", color = MaterialTheme.status.disabled)
     }
 
+    Section("battery")
+    // deep idle 5 min after the cover goes off: less drain, but alerts that aren't urgent may wait for its next window
+    Setting("deep sleep") {
+      if (state.shizuku) SegmentedControl(listOf(true to "on", false to "off"), state.deepSleep, { onAction(SettingsAction.SetDeepSleep(it)) })
+      else Label("needs shizuku", color = MaterialTheme.status.disabled)
+    }
+
     Section("tiles")
     // panel order: the first five show collapsed; "setup" always comes last
     state.tiles.forEachIndexed { i, tile ->

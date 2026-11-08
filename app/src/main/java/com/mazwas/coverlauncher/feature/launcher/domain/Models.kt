@@ -77,6 +77,22 @@ fun nowPlaying(packageName: String?, title: CharSequence?, artist: CharSequence?
 fun listedNotifications(notes: List<LauncherNotification>, playing: NowPlaying?): List<LauncherNotification> =
   if (playing == null) notes else notes.filterNot { it.media && it.packageName == playing.packageName }
 
+/**
+ * MultiStar's secure setting `multistar_setting_repository`: slots split by '/', slot 26 lists the apps Samsung lets open
+ * on the cover as "pkg,userId" joined by ';' ("0" when empty). Returns it with [packages] added to that slot and every
+ * other slot untouched, or null when nothing is missing or the value isn't shaped like that. Never removes an entry.
+ */
+fun withCoverApps(repository: String?, packages: Collection<String>, userId: Int = 0): String? {
+  val slots = repository?.split('/')?.toMutableList()?.takeIf { it.size > COVER_SLOT } ?: return null
+  val entries = slots[COVER_SLOT].takeUnless { it == "0" }.orEmpty().split(';').filter { it.isNotEmpty() }
+  val missing = packages.distinct().map { "$it,$userId" }.filterNot { it in entries }
+  if (missing.isEmpty()) return null
+  slots[COVER_SLOT] = (entries + missing).joinToString(";")
+  return slots.joinToString("/")
+}
+
+private const val COVER_SLOT = 25 // slot 26
+
 /** Samsung's own cover brightness: [level] 1..255 (`system/sub_screen_brightness`) and whether auto brightness drives it. */
 data class CoverBrightness(val level: Int, val auto: Boolean)
 

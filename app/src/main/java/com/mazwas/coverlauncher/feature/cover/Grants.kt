@@ -2,9 +2,13 @@ package com.mazwas.coverlauncher.feature.cover
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.pm.LauncherApps
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.provider.Settings
+import com.mazwas.coverlauncher.feature.launcher.domain.withCoverApps
+import kotlin.concurrent.thread
 import com.mazwas.coverlauncher.core.system.Shell
 import com.mazwas.coverlauncher.core.system.keepFolded
 import com.mazwas.coverlauncher.feature.launcher.data.NotificationListener
@@ -30,9 +34,24 @@ class Grants(private val context: Context) {
       Shell.exec("settings", "put", "secure", Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, next.joinToString(":"))
       Shell.exec("settings", "put", "secure", Settings.Secure.ACCESSIBILITY_ENABLED, "1")
     }
+    listAppsOnCover()
     // After an update (`adb install -r`) the system left CoverService enabled but stuck "binding" (seen 2026-11-08: no
     // ServiceRecord, nothing retried). Still not connected a moment later: switch it off and on, which rebinds it.
     main.postDelayed({ if (!CoverService.connected && coverServiceEnabled()) rebindCoverService() }, 5_000)
+  }
+
+  /**
+   * Samsung lets apps on MultiStar's cover list open on the cover from a plain `startActivity`, so with every launchable
+   * app listed, launches keep working while Shizuku is down. Only adds; the first change backs the old value up for adb.
+   * shortcut: user 0 only (no work profile / Secure Folder apps); add their user ids if those should open on the cover.
+   */
+  private fun listAppsOnCover() = thread {
+    val key = "multistar_setting_repository"
+    val apps = context.getSystemService(LauncherApps::class.java).getActivityList(null, Process.myUserHandle())
+      .map { it.componentName.packageName }.filter { it != context.packageName }.sorted()
+    val next = withCoverApps(Shell.output("settings", "get", "secure", key)?.trim(), apps) ?: return@thread
+    Shell.output("sh", "-c", "[ -f $MULTISTAR_BACKUP ] || settings get secure $key > $MULTISTAR_BACKUP")
+    Shell.exec("settings", "put", "secure", key, next)
   }
 
   private fun rebindCoverService() {
@@ -43,6 +62,10 @@ class Grants(private val context: Context) {
   }
 
   private val main = Handler(Looper.getMainLooper())
+
+  private companion object {
+    const val MULTISTAR_BACKUP = "/data/local/tmp/coverlauncher-multistar.bak"
+  }
 
   /** Whether CoverService (the part that keeps the launcher the cover home) is switched on. */
   fun coverServiceEnabled(): Boolean = coverService in enabledServices()

@@ -38,6 +38,16 @@ class ModelsTest {
     assertEquals(emptyList<String>(), notificationActions("call", listOf("Decline", "Answer")))
   }
 
+  @Test fun `cover list only adds missing apps to slot 26 and keeps every other slot`() {
+    val head = List(25) { "0" }.joinToString("/")
+    val phone = "$head/backup,0;com.android.chrome,0/0/0/0/" // shape seen on the phone: 30 slots, trailing '/'
+    assertEquals("$head/backup,0;com.android.chrome,0;a.b,0/0/0/0/", withCoverApps(phone, listOf("com.android.chrome", "a.b", "a.b")))
+    assertEquals(null, withCoverApps(phone, listOf("com.android.chrome"))) // nothing to add: no write
+    assertEquals("$head/a.b,0;c.d,0/0/0/0/", withCoverApps("$head/0/0/0/0/", listOf("a.b", "c.d"))) // empty slot
+    assertEquals(null, withCoverApps("0/0/0", listOf("a.b"))) // not the format we know: leave it alone
+    assertEquals(null, withCoverApps(null, listOf("a.b")))
+  }
+
   @Test fun `a media session needs a title to show the player`() {
     assertEquals(NowPlaying("m", "Song", "Band", playing = true), nowPlaying("m", "Song", "Band", true))
     assertEquals(NowPlaying("m", "Song", "", playing = false), nowPlaying("m", "Song", null, false))

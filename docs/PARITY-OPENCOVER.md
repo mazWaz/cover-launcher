@@ -125,7 +125,8 @@ get-allowed-network-types-for-users -s 0` → `No valid subscription found`, jad
 2. ~~**Media player**~~ **selesai (minimal)**: baris di panel, sesi teratas, ⏮ ⏯ ⏭; `MediaSessionManager` menumpang
    izin listener. Tanpa pilihan sesi, seek, sampul.
 3. ~~**Allowlist cover**~~ **selesai**: `Grants` menambah semua app ke slot 26 setiap Shizuku tersambung (hanya
-   menambah, backup sekali). Jalur `startActivity` tanpa Shizuku belum diuji dengan Shizuku dimatikan. ~~Approve dialog debugging~~ **selesai dengan cara lain**: dialog asli dipindah ke cover
+   menambah, backup sekali). Terbukti (Shizuku dihentikan): app di daftar terbuka di cover lewat `startActivity`,
+   app di luar daftar ditutup Samsung. ~~Approve dialog debugging~~ **selesai dengan cara lain**: dialog asli dipindah ke cover
    dan dijawab pengguna (bukan a11y menekan Allow); belum diuji dengan dialog asli.
 4. **Tile lengkap + reorder** — **sebagian selesai**: NFC, dark mode, keep awake; panel ringkas 5 tile, usap bawah =
    semua. Hotspot ditunda (tanpa SIM). Belum: rotate, mirror, urutan di `SettingsStore`. ~~Slider brightness~~ **selesai**:

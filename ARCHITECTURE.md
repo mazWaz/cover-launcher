@@ -13,7 +13,7 @@ com.mazwas.coverlauncher
     ├── cover/                     CoverService (reopens the launcher when Samsung's cover home shows), Grants (shell setup), ShizukuAutoStart
     ├── launcher/
     │   ├── domain/                LaunchableApp, LauncherNotification, SystemStatus, OpenTarget, LauncherSettings, filterApps, resolveDock, relativeAge
-    │   ├── data/                  AppsSource, IconLoader, SettingsStore, NotificationStore (+ listener), SystemStatusSource (+ toggles), CoverOpener
+    │   ├── data/                  AppsSource, IconLoader, SettingsStore, NotificationStore (+ listener), SystemStatusSource (+ toggles, cover brightness), MediaSource, CoverOpener
     │   └── presentation/          LauncherActivity, contract, ViewModel, Root + Screen, HomePage/AppDrawer/NotificationPanel/Wallpaper, Icons, Gestures
     └── settings/presentation/     Settings contract, ViewModel, Root + Screen
 ```

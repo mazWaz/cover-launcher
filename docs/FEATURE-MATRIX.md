@@ -68,7 +68,7 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 
 | Fitur | OpenCover | Kita |
 |---|---|---|
-| Panel media | Ya: multi-sesi, sampul, seek di tepi, volume di tepi, shuffle/repeat, layout klasik | Tidak |
+| Panel media | Ya: multi-sesi, sampul, seek di tepi, volume di tepi, shuffle/repeat, layout klasik | Ya, minimal: sesi teratas, judul + artis, ⏮ ⏯ ⏭ |
 | Chip now-playing di AOD/lock | Ya | Tidak |
 
 ## F. Quick settings

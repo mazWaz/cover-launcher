@@ -116,6 +116,7 @@ Clock                                                  LauncherAction → ViewMo
 | `AppsSource` | `LauncherApps.getActivityList` + callback install/uninstall/update, A–Z, tanpa app sendiri |
 | `NotificationStore` | `NotificationListenerService` menyimpan `StatusBarNotification` mentah (untuk dibuka/dibatalkan); `FLAG_GROUP_SUMMARY` dan yang tanpa judul+teks dibuang |
 | `SystemStatusSource` | battery, wifi, BT, torch, DND, airplane, data, ringer, location, power saver. Toggle lewat `Shell` (tabel di §8), data lewat `ContentObserver` pada `Settings.Global.mobile_data` |
+| `MediaSource` | `MediaSessionManager.getActiveSessions(listener)` + `OnActiveSessionsChangedListener`, menumpang izin listener notifikasi; mengikuti sesi teratas saja (paket, judul, artis, playing) dan mengirim ⏮ ⏯ ⏭ lewat `transportControls`. Ketuk judul = buka app paket itu lewat jalur app biasa. Selama pemutar tampil, notifikasi ber-`EXTRA_MEDIA_SESSION` dari paket yang sama tidak masuk daftar (`listedNotifications`) |
 | `SettingsStore` | DataStore `launcher`: dock, `IconStyle`, `wallpaperVersion`, `dotFilter`; gambar di `filesDir/wallpaper.jpg` |
 | `IconLoader` | `resolveActivity().getIcon()` → mono (layer monochrome di atas disc, fallback greyscale) atau warna; `LruCache` 256; ikon notifikasi = smallIcon putih |
 | `Clock` | tick tiap batas menit, format 12/24 jam ikut sistem |
@@ -152,7 +153,7 @@ Overlay drawer/panel adalah `enum Overlay` di state internal ViewModel, bukan ru
 
 ## Batasan yang disengaja
 
-- Tidak ada balas inline (tombol Balas membuka app), tombol untuk notifikasi panggilan, media player, rotasi/density per app, mirroring,
+- Tidak ada balas inline (tombol Balas membuka app), tombol untuk notifikasi panggilan, pilihan antar sesi media / seek / sampul album, rotasi/density per app, mirroring,
   atau keyboard sendiri — lihat [PARITY-OPENCOVER.md](PARITY-OPENCOVER.md).
 - Membuka app **butuh** Shizuku; tanpa itu jatuh ke `startActivity` biasa dan Samsung bisa menampilkan
   "Open your phone to continue".

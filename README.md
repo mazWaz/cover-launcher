@@ -21,6 +21,8 @@ Nothing-inspired design: OLED black, monochrome, dot-matrix clock.
 - **Quick toggles** (swipe sideways for page 2): Wi-Fi, Bluetooth, mobile data, torch, Do Not Disturb,
   airplane mode, sound (ring → vibrate → mute), location, power saver.
   Long-press opens the matching system popup (Wi-Fi, internet, volume) or settings page.
+- **Media player** in the panel while something plays: title, artist, previous / play-pause / next (top session).
+  Tap the title to open the app; that app's media notification is left out of the list while the player shows.
 - **Cover brightness** slider under the toggles: dragging sets a manual level (auto brightness goes off), **AUTO**
   hands it back to Samsung's adaptive brightness. Needs Shizuku; hidden without it.
 - **Every app opens on the cover**: apps are started on display 1 through Shizuku, which skips Samsung's

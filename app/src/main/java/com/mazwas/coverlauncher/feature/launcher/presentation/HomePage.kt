@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.mazwas.coverlauncher.core.designsystem.cutoutSides
 import com.mazwas.coverlauncher.R
 import com.mazwas.coverlauncher.core.designsystem.Label
 import com.mazwas.coverlauncher.core.designsystem.SegmentedBar
@@ -40,6 +41,7 @@ fun HomePage(state: LauncherState, onAction: (LauncherAction) -> Unit, modifier:
   Box(
     modifier
       .fillMaxSize()
+      .cutoutSides()
       .verticalSwipe(onUp = { onAction(LauncherAction.OpenDrawer) }, onDown = { onAction(LauncherAction.OpenPanel) })
       .pointerInput(Unit) { detectTapGestures(onLongPress = { onAction(LauncherAction.OpenSettings) }) },
   ) {

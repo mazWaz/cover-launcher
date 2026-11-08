@@ -16,9 +16,18 @@ const val COVER_DISPLAY = 1
 /** The (dead) main screen. */
 const val MAIN_DISPLAY = 0
 
-/** Keep-awake tile: the launcher writes [KEEP_AWAKE], CoverService holds the cover on while it is set. */
-fun Context.keepAwakePrefs(): SharedPreferences = getSharedPreferences("keep_awake", Context.MODE_PRIVATE)
+/**
+ * Tiles CoverService acts on, read synchronously there: the launcher writes them, CoverService follows.
+ * The file keeps its first name so the keep-awake value survives updates.
+ */
+fun Context.coverPrefs(): SharedPreferences = getSharedPreferences("keep_awake", Context.MODE_PRIVATE)
+
+/** Keep-awake tile: CoverService holds the cover on while it is set. */
 const val KEEP_AWAKE = "on"
+
+/** Rotate tile: true = the cover follows the sensor, false = locked at [ROTATE_LOCK] (a Surface.ROTATION_* value). */
+const val ROTATE_AUTO = "rotate_auto"
+const val ROTATE_LOCK = "rotate_lock"
 
 /** Start options that put an activity (or a notification's PendingIntent) on the cover. */
 @Suppress("DEPRECATION") // ALLOW_ALWAYS is API 36; minSdk is 34

@@ -22,7 +22,9 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.mazwas.coverlauncher.feature.cover.ShizukuAutoStart.Step
 import com.mazwas.coverlauncher.core.system.COVER_DISPLAY
 import com.mazwas.coverlauncher.core.system.KEEP_AWAKE
-import com.mazwas.coverlauncher.core.system.keepAwakePrefs
+import com.mazwas.coverlauncher.core.system.ROTATE_AUTO
+import com.mazwas.coverlauncher.core.system.ROTATE_LOCK
+import com.mazwas.coverlauncher.core.system.coverPrefs
 import com.mazwas.coverlauncher.core.system.MAIN_DISPLAY
 import com.mazwas.coverlauncher.core.system.TAG
 import com.mazwas.coverlauncher.core.system.coverOptions
@@ -51,6 +53,7 @@ class CoverService : AccessibilityService() {
   private val notifications: NotificationStore by inject()
   private val settings: SettingsStore by inject()
   private val popup by lazy { CoverPopup(this, get(), notifications, get()) }
+  private val rotation by lazy { CoverRotation(this) { rootInActiveWindow?.packageName } }
   private val scope = MainScope()
 
   // Shizuku hands out its binder only when our uid starts; its "send to every client" at server start misses us on
@@ -68,11 +71,12 @@ class CoverService : AccessibilityService() {
   override fun onServiceConnected() {
     connected = true
     registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF))
-    keepAwakePrefs().registerOnSharedPreferenceChangeListener(awakeChanged)
+    coverPrefs().registerOnSharedPreferenceChangeListener(tilesChanged)
     holdCoverOn()
     // boot / reinstall left no launcher task: create it now so the cover wakes to it (it shows over the lock screen)
     showLauncher()
     scope.launch { notifications.popups.collect { if (settings.settings.first().popups) popup.show(it) } }
+    scope.launch { settings.settings.collect { rotation.flipped = it.flipped } }
   }
 
   override fun onDestroy() {
@@ -80,7 +84,8 @@ class CoverService : AccessibilityService() {
     scope.cancel()
     popup.hide()
     unregisterReceiver(screenOff)
-    keepAwakePrefs().unregisterOnSharedPreferenceChangeListener(awakeChanged)
+    rotation.stop()
+    coverPrefs().unregisterOnSharedPreferenceChangeListener(tilesChanged)
     releaseCover()
     super.onDestroy()
   }
@@ -88,10 +93,15 @@ class CoverService : AccessibilityService() {
   // Keep-awake tile: an invisible 1×1 window on the cover with FLAG_KEEP_SCREEN_ON stops the cover timing out, whatever
   // app is in front. The power key still turns it off.
   private var awake: View? = null
-  private val awakeChanged = SharedPreferences.OnSharedPreferenceChangeListener { _, key -> if (key == KEEP_AWAKE) holdCoverOn() }
+  private val tilesChanged = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+    when (key) {
+      KEEP_AWAKE -> holdCoverOn()
+      ROTATE_AUTO, ROTATE_LOCK -> rotation.apply()
+    }
+  }
 
   private fun holdCoverOn() {
-    if (!keepAwakePrefs().getBoolean(KEEP_AWAKE, false)) return releaseCover()
+    if (!coverPrefs().getBoolean(KEEP_AWAKE, false)) return releaseCover()
     if (awake != null) return
     val cover = displays.getDisplay(COVER_DISPLAY) ?: return
     val window = createDisplayContext(cover).createWindowContext(LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, null)
@@ -112,6 +122,7 @@ class CoverService : AccessibilityService() {
   }
 
   override fun onAccessibilityEvent(e: AccessibilityEvent) {
+    if (e.displayId == COVER_DISPLAY) rotation.onWindow(e.packageName, e.className)
     when {
       e.displayId == COVER_DISPLAY && e.className == SUB_HOME -> {
         Log.i(TAG, "cover home shown -> launcher")

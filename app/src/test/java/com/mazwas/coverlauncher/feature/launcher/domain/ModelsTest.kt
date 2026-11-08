@@ -52,6 +52,13 @@ class ModelsTest {
     assertEquals(false, shouldPopUp(Notification.FLAG_ONGOING_EVENT, high, isUpdate = false, passesDnd = true))
   }
 
+  @Test fun `flipped apps turn the cover upside down, others follow the rotate tile`() {
+    val flipped = setOf("com.mobile.legends")
+    assertEquals(2, coverRotation("com.mobile.legends", flipped, auto = true, lockedAt = 1, sensed = 3))
+    assertEquals(3, coverRotation("launcher", flipped, auto = true, lockedAt = 1, sensed = 3))
+    assertEquals(1, coverRotation("launcher", flipped, auto = false, lockedAt = 1, sensed = 3))
+  }
+
   @Test fun `cover list only adds missing apps to slot 26 and keeps every other slot`() {
     val head = List(25) { "0" }.joinToString("/")
     val phone = "$head/backup,0;com.android.chrome,0/0/0/0/" // shape seen on the phone: 30 slots, trailing '/'

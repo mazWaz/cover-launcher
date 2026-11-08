@@ -31,6 +31,7 @@ data class LauncherState(
   val wallpaper: Wallpaper? = null,
   val coverBrightness: CoverBrightness? = null, // read when the panel opens; null without Shizuku (no slider)
   val nowPlaying: NowPlaying? = null, // null: nothing playing, no player
+  val flipped: Set<String> = emptySet(), // packages shown upside down
 )
 
 sealed interface LauncherAction {
@@ -42,6 +43,7 @@ sealed interface LauncherAction {
   data object LaunchFirst : LauncherAction
   data class Launch(val app: LaunchableApp) : LauncherAction
   data class TogglePin(val app: LaunchableApp) : LauncherAction
+  data class ToggleFlip(val app: LaunchableApp) : LauncherAction
   data class AppInfo(val app: LaunchableApp) : LauncherAction
   data class Uninstall(val app: LaunchableApp) : LauncherAction
   data class OpenNotification(val key: String) : LauncherAction

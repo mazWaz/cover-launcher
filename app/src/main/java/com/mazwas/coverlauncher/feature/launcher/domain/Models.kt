@@ -58,6 +58,7 @@ data class SystemStatus(
   val nfcOn: Boolean = false,
   val darkOn: Boolean = false,
   val keepAwakeOn: Boolean = false,
+  val rotateAutoOn: Boolean = false,
 ) {
   fun isOn(toggle: QuickToggle): Boolean = when (toggle) {
     QuickToggle.Wifi -> wifiOn
@@ -72,6 +73,7 @@ data class SystemStatus(
     QuickToggle.Nfc -> nfcOn
     QuickToggle.Dark -> darkOn
     QuickToggle.KeepAwake -> keepAwakeOn
+    QuickToggle.Rotate -> rotateAutoOn
   }
 }
 
@@ -117,7 +119,17 @@ fun parseCoverBrightness(out: String?): CoverBrightness? {
 }
 
 /** Quick settings tiles in panel order; the collapsed panel shows the first five. */
-enum class QuickToggle { Wifi, Bluetooth, Data, Torch, Dnd, Airplane, Sound, Location, Saver, Nfc, Dark, KeepAwake }
+enum class QuickToggle { Wifi, Bluetooth, Data, Torch, Dnd, Airplane, Sound, Location, Saver, Nfc, Dark, KeepAwake, Rotate }
+
+/**
+ * The cover's rotation (Surface.ROTATION_*) for the app in front: a flipped app upside down (camera top left instead of
+ * bottom right, over its buttons), otherwise the rotate tile: the [sensed] orientation, or locked at [lockedAt].
+ */
+fun coverRotation(front: String, flipped: Set<String>, auto: Boolean, lockedAt: Int, sensed: Int): Int = when {
+  front in flipped -> 2
+  auto -> sensed
+  else -> lockedAt
+}
 
 /** Something to open on the cover. */
 sealed interface OpenTarget {
@@ -138,6 +150,7 @@ data class LauncherSettings(
   val wallpaperVersion: Long = 0, // 0 = no custom wallpaper
   val dotFilter: Boolean = true,
   val popups: Boolean = false, // our cover pop-up instead of Samsung's
+  val flipped: Set<String> = emptySet(), // packages shown upside down while in front (see coverRotation)
 )
 
 const val DOCK_SIZE = 4

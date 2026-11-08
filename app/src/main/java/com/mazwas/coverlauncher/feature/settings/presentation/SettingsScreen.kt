@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mazwas.coverlauncher.core.designsystem.cutoutSides
 import com.mazwas.coverlauncher.R
 import com.mazwas.coverlauncher.core.designsystem.Label
 import com.mazwas.coverlauncher.core.designsystem.NothingTheme
@@ -75,6 +76,7 @@ fun SettingsScreen(state: SettingsState, onAction: (SettingsAction) -> Unit) {
     Modifier
       .fillMaxSize()
       .background(MaterialTheme.colorScheme.background)
+      .cutoutSides()
       .verticalScroll(rememberScrollState())
       .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = cutout + 16.dp),
   ) {

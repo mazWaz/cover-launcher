@@ -23,9 +23,13 @@ import android.provider.Settings
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import android.util.Log
+import android.hardware.display.DisplayManager
+import com.mazwas.coverlauncher.core.system.COVER_DISPLAY
 import com.mazwas.coverlauncher.core.system.KEEP_AWAKE
+import com.mazwas.coverlauncher.core.system.ROTATE_AUTO
+import com.mazwas.coverlauncher.core.system.ROTATE_LOCK
 import com.mazwas.coverlauncher.core.system.Shell
-import com.mazwas.coverlauncher.core.system.keepAwakePrefs
+import com.mazwas.coverlauncher.core.system.coverPrefs
 import com.mazwas.coverlauncher.core.system.TAG
 import com.mazwas.coverlauncher.feature.launcher.domain.CoverBrightness
 import com.mazwas.coverlauncher.feature.launcher.domain.QuickToggle
@@ -50,6 +54,7 @@ class SystemStatusSource(private val context: Context) {
   private val location = context.getSystemService(LocationManager::class.java)
   private val power = context.getSystemService(PowerManager::class.java)
   private val nfc: NfcAdapter? = NfcAdapter.getDefaultAdapter(context)
+  private val displays = context.getSystemService(DisplayManager::class.java)
 
   private val base = combine(
     broadcasts(Intent.ACTION_BATTERY_CHANGED),
@@ -83,25 +88,27 @@ class SystemStatusSource(private val context: Context) {
       flag(NfcAdapter.ACTION_ADAPTER_STATE_CHANGED) { runCatching { nfc?.isEnabled == true }.getOrDefault(false) },
       // night mode has no broadcast of its own; the app's configuration follows it
       flag(Intent.ACTION_CONFIGURATION_CHANGED) { context.resources.configuration.isNightModeActive },
-      keepAwake(),
+      coverTiles(),
       ::Extra,
     ),
   ) { status, dataOn, airplaneOn, sound, extra ->
     status.copy(
       dataOn = dataOn, airplaneOn = airplaneOn, sound = sound, locationOn = extra.location, saverOn = extra.saver,
-      nfcOn = extra.nfc, darkOn = extra.dark, keepAwakeOn = extra.keepAwake,
+      nfcOn = extra.nfc, darkOn = extra.dark, keepAwakeOn = extra.tiles.first, rotateAutoOn = extra.tiles.second,
     )
   }
 
-  private data class Extra(val location: Boolean, val saver: Boolean, val nfc: Boolean, val dark: Boolean, val keepAwake: Boolean)
+  private data class Extra(val location: Boolean, val saver: Boolean, val nfc: Boolean, val dark: Boolean, val tiles: Pair<Boolean, Boolean>)
 
-  private fun keepAwake(): Flow<Boolean> = callbackFlow {
-    val prefs = context.keepAwakePrefs()
-    val changed = SharedPreferences.OnSharedPreferenceChangeListener { p, key -> if (key == KEEP_AWAKE) trySend(p.getBoolean(key, false)) }
-    trySend(prefs.getBoolean(KEEP_AWAKE, false))
+  /** Keep awake and rotate auto, from the prefs CoverService follows. */
+  private fun coverTiles(): Flow<Pair<Boolean, Boolean>> = callbackFlow {
+    val prefs = context.coverPrefs()
+    val read = { trySend(prefs.getBoolean(KEEP_AWAKE, false) to prefs.getBoolean(ROTATE_AUTO, false)) }
+    val changed = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> read() }
+    read()
     prefs.registerOnSharedPreferenceChangeListener(changed)
     awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(changed) }
-  }
+  }.distinctUntilChanged()
 
   /** Emits the sticky intent (or null) right away, then every broadcast. */
   private fun broadcasts(action: String): Flow<Intent?> = callbackFlow {
@@ -166,7 +173,10 @@ class SystemStatusSource(private val context: Context) {
       // not `svc nfc`: it gets killed on this phone (exit 137, also from adb). "persist" keeps it off across reboots.
       QuickToggle.Nfc -> if (on) Shell.exec("cmd", "nfc", "enable-nfc") else Shell.exec("cmd", "nfc", "disable-nfc", "persist")
       QuickToggle.Dark -> Shell.exec("cmd", "uimode", "night", if (on) "yes" else "no")
-      QuickToggle.KeepAwake -> context.keepAwakePrefs().edit().putBoolean(KEEP_AWAKE, on).apply()
+      QuickToggle.KeepAwake -> context.coverPrefs().edit().putBoolean(KEEP_AWAKE, on).apply()
+      // locking keeps the cover the way it is turned now, like Android's auto-rotate tile
+      QuickToggle.Rotate -> context.coverPrefs().edit().putBoolean(ROTATE_AUTO, on)
+        .putInt(ROTATE_LOCK, displays.getDisplay(COVER_DISPLAY)?.rotation ?: 0).apply()
     }
   }
 

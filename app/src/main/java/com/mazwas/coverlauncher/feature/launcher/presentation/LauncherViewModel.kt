@@ -68,6 +68,7 @@ class LauncherViewModel(
       else Wallpaper(settings.wallpaperFile.path, s.wallpaperVersion, s.dotFilter),
       coverBrightness = u.brightness,
       nowPlaying = playing,
+      flipped = s.flipped,
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LauncherState())
 
@@ -84,6 +85,10 @@ class LauncherViewModel(
       LauncherAction.LaunchFirst -> state.value.apps.firstOrNull()?.let(::launch)
       is LauncherAction.Launch -> launch(action.app)
       is LauncherAction.TogglePin -> togglePin(action.app)
+      is LauncherAction.ToggleFlip -> {
+        val pkg = action.app.packageName
+        viewModelScope.launch { settings.setFlipped(pkg, pkg !in state.value.flipped) }
+      }
       is LauncherAction.AppInfo -> send(LauncherEvent.Open(OpenTarget.Info(action.app.packageName)))
       is LauncherAction.Uninstall -> send(LauncherEvent.Open(OpenTarget.Uninstall(action.app.packageName)))
       is LauncherAction.OpenNotification -> send(LauncherEvent.Open(OpenTarget.Notification(action.key)))

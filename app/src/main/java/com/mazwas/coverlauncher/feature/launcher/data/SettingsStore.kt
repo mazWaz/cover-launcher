@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.mazwas.coverlauncher.feature.launcher.domain.IconStyle
 import com.mazwas.coverlauncher.feature.launcher.domain.LauncherSettings
@@ -26,6 +27,7 @@ class SettingsStore(private val context: Context) {
   private val wallpaperKey = longPreferencesKey("wallpaper")
   private val dotsKey = booleanPreferencesKey("dots")
   private val popupsKey = booleanPreferencesKey("popups")
+  private val flippedKey = stringSetPreferencesKey("flipped")
 
   val wallpaperFile = File(context.filesDir, "wallpaper.jpg")
 
@@ -36,6 +38,7 @@ class SettingsStore(private val context: Context) {
       wallpaperVersion = p[wallpaperKey] ?: 0,
       dotFilter = p[dotsKey] ?: true,
       popups = p[popupsKey] ?: false,
+      flipped = p[flippedKey].orEmpty(),
     )
   }
 
@@ -43,6 +46,10 @@ class SettingsStore(private val context: Context) {
   suspend fun setIconStyle(style: IconStyle) = context.dataStore.edit { it[iconsKey] = style.name }
   suspend fun setDotFilter(on: Boolean) = context.dataStore.edit { it[dotsKey] = on }
   suspend fun setPopups(on: Boolean) = context.dataStore.edit { it[popupsKey] = on }
+  suspend fun setFlipped(pkg: String, on: Boolean) = context.dataStore.edit {
+    val now = it[flippedKey].orEmpty()
+    it[flippedKey] = if (on) now + pkg else now - pkg
+  }
 
   /** Copies the picked image, scaled down to just cover the 748×720 screen. */
   suspend fun importWallpaper(uri: Uri) {

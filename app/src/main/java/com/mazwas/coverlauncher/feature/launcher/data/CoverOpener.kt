@@ -41,7 +41,7 @@ class CoverOpener(private val context: Context, private val notifications: Notif
     QuickToggle.Saver -> Settings.ACTION_BATTERY_SAVER_SETTINGS
     QuickToggle.Nfc -> Settings.ACTION_NFC_SETTINGS
     QuickToggle.Dark -> Settings.ACTION_DISPLAY_SETTINGS
-    QuickToggle.Torch, QuickToggle.KeepAwake -> null
+    QuickToggle.Torch, QuickToggle.KeepAwake, QuickToggle.Rotate -> null
   }
 
   private fun settings(action: String) {

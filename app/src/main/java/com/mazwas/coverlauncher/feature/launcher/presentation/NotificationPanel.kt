@@ -46,6 +46,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.painterResource
+import com.mazwas.coverlauncher.core.designsystem.cutoutSides
 import com.mazwas.coverlauncher.feature.launcher.domain.CoverBrightness
 import com.mazwas.coverlauncher.feature.launcher.domain.MediaCommand
 import com.mazwas.coverlauncher.feature.launcher.domain.NowPlaying
@@ -84,6 +85,7 @@ fun NotificationPanel(state: LauncherState, onAction: (LauncherAction) -> Unit, 
     modifier
       .fillMaxSize()
       .background(Color.Black)
+      .cutoutSides()
       .verticalSwipe(onUp = { if (expanded) expanded = false else onAction(LauncherAction.Close) }, onDown = { expanded = true })
       .padding(top = 14.dp),
   ) {
@@ -160,8 +162,9 @@ private fun tiles(s: SystemStatus): List<Tile> = QuickToggle.entries.map { t ->
     QuickToggle.Nfc -> R.drawable.ic_nfc to "nfc"
     QuickToggle.Dark -> R.drawable.ic_contrast to "dark"
     QuickToggle.KeepAwake -> R.drawable.ic_coffee to "awake"
+    QuickToggle.Rotate -> R.drawable.ic_rotate_cw to if (s.rotateAutoOn) "rotate" else "locked"
   }
-  val hold = LauncherAction.ToggleSettings(t).takeIf { t != QuickToggle.Torch && t != QuickToggle.KeepAwake }
+  val hold = LauncherAction.ToggleSettings(t).takeIf { t != QuickToggle.Torch && t != QuickToggle.KeepAwake && t != QuickToggle.Rotate }
   Tile(icon, label, s.isOn(t), LauncherAction.Toggle(t), hold)
 } + Tile(R.drawable.ic_settings, "setup", false, LauncherAction.OpenSettings, null)
 

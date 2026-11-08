@@ -25,6 +25,7 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.mazwas.coverlauncher.core.designsystem.cutoutSides
 import com.mazwas.coverlauncher.core.designsystem.NothingTheme
 import com.mazwas.coverlauncher.core.system.COVER_DISPLAY
 import com.mazwas.coverlauncher.core.system.TAG
@@ -93,7 +94,7 @@ class CoverPopup(
               key(n) {
                 NotificationRow(
                   n, System.currentTimeMillis(), ::onAction,
-                  Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp).verticalSwipe(onUp = ::hide),
+                  Modifier.cutoutSides().padding(start = 12.dp, end = 12.dp, top = 8.dp).verticalSwipe(onUp = ::hide),
                 )
               }
             }

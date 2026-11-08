@@ -46,6 +46,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mazwas.coverlauncher.core.designsystem.cutoutSides
 import com.mazwas.coverlauncher.R
 import com.mazwas.coverlauncher.core.designsystem.Label
 import com.mazwas.coverlauncher.core.designsystem.status
@@ -61,6 +62,7 @@ fun AppDrawer(state: LauncherState, onAction: (LauncherAction) -> Unit, modifier
     modifier
       .fillMaxSize()
       .background(Color.Black)
+      .cutoutSides()
       .imePadding()
       .verticalSwipe(onDown = { onAction(LauncherAction.Close) })
       .padding(top = 10.dp),
@@ -86,7 +88,7 @@ fun AppDrawer(state: LauncherState, onAction: (LauncherAction) -> Unit, modifier
         contentPadding = PaddingValues(start = 6.dp, end = 6.dp, top = 8.dp, bottom = cutout + 8.dp),
       ) {
         items(state.apps, key = { it.key }) { app ->
-          DrawerItem(app, pinned = app in state.dock, style = state.iconStyle, onAction = onAction)
+          DrawerItem(app, pinned = app in state.dock, flipped = app.packageName in state.flipped, style = state.iconStyle, onAction = onAction)
         }
       }
     }
@@ -127,7 +129,7 @@ private fun SearchField(query: String, onChange: (String) -> Unit, onGo: () -> U
 }
 
 @Composable
-private fun DrawerItem(app: LaunchableApp, pinned: Boolean, style: IconStyle, onAction: (LauncherAction) -> Unit) {
+private fun DrawerItem(app: LaunchableApp, pinned: Boolean, flipped: Boolean, style: IconStyle, onAction: (LauncherAction) -> Unit) {
   var menu by remember { mutableStateOf(false) }
   Box {
     Column(
@@ -155,6 +157,8 @@ private fun DrawerItem(app: LaunchableApp, pinned: Boolean, style: IconStyle, on
       border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
       MenuItem(R.drawable.ic_pin, if (pinned) "unpin" else "pin to dock") { menu = false; onAction(LauncherAction.TogglePin(app)) }
+      // upside down while it's in front: moves the camera from bottom right (over game buttons) to top left
+      MenuItem(R.drawable.ic_rotate_cw, if (flipped) "upright" else "upside down") { menu = false; onAction(LauncherAction.ToggleFlip(app)) }
       MenuItem(R.drawable.ic_info, "app info") { menu = false; onAction(LauncherAction.AppInfo(app)) }
       MenuItem(R.drawable.ic_trash_2, "uninstall", MaterialTheme.colorScheme.error) {
         menu = false

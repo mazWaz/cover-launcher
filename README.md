@@ -18,9 +18,17 @@ Nothing-inspired design: OLED black, monochrome, dot-matrix clock.
 - **App drawer**: every app A–Z, search, pin to dock, app info, uninstall.
 - **Notification panel**: tap a notification to open it on the cover, swipe to dismiss, clear all, and up to three
   of its buttons (Mark as read, Archive…). Reply buttons open the app; calls get no buttons, tap opens the call screen.
+- **WhatsApp calls** work with WhatsApp's own call screen, which opens on the cover: answer, two-way audio, speaker.
 - **Pop-ups** (opt-in, Settings → *pop-ups: ours*): a new message shows as the panel's card at the top of the cover
   for 5 seconds, over any app and the lock screen. Samsung's own cover pop-ups are switched off meanwhile, so nothing
   pops up twice. Same rules as Android's heads-up: important notifications only, none that Do Not Disturb holds back.
+  Over a PIN lock it follows your lock-screen notification settings (e.g. "1 new message" when content is hidden), and
+  it never shows over the AOD.
+- **AOD** (opt-in, Settings → *aod: ours*): while the cover sleeps it shows the launcher's own always-on screen (dot
+  clock, date, alert count, app icons, battery) at half brightness, shifting slightly every minute. Samsung's AOD must
+  stay on ("Always") underneath.
+- **PIN lock respected**: with a PIN, pattern or password the launcher waits behind Samsung's lock screen; without one
+  it opens the moment the cover wakes.
 - **Quick toggles**: five on top; swipe down in the panel to see all of them with the brightness slider underneath.
   Wi-Fi, Bluetooth, mobile data, torch, Do Not Disturb, airplane mode, sound (ring → vibrate → mute), location,
   power saver, NFC, dark mode, keep awake (the cover stays on until you turn it off or press the power key),
@@ -139,6 +147,7 @@ Long-press the home screen.
 | **Wallpaper** → choose image / reset | Your own picture, scaled to the 748×720 cover. |
 | **Dot filter** on/off | Renders the wallpaper as a dot-matrix pattern. |
 | **Icons** mono/color | Monochrome or original app icons. |
+| **AOD** ours/samsung | *Ours*: the launcher's AOD drawn over Samsung's while the cover sleeps. Needs Samsung's AOD on, "Always". |
 | **Pop-ups** ours/samsung | *Ours*: the launcher's pop-up, Samsung's cover pop-ups off. *Samsung*: back to Samsung's. Needs Shizuku; shows "needs shizuku" without it. |
 | **Shizuku** ready/off | Whether the launcher can run shell commands. |
 | **Notifications** on/off | Whether notification access is granted. |
@@ -165,6 +174,8 @@ Shizuku has to be running for apps to open on the cover.
 | Cover wakes to Samsung's clock instead of the launcher | Check *Settings → Accessibility → Installed apps → Cover Launcher* is on, or tap **Fix permissions**. |
 | Cover stuck on a half-transparent lock clock right after a One UI update | Samsung's post-update intro is waiting on the (dead) main screen and blocks the cover. Turn the main display on with `adb shell cmd device_state state 3`, finish the intro there (blind taps, or mirrored with [scrcpy](https://github.com/Genymobile/scrcpy) `--display-id 0`), then `adb shell cmd device_state state 0`. |
 | A new computer shows the phone as `unauthorized` | The "Allow USB debugging?" prompt should be on the cover: unlock it and answer. Not there: Shizuku must be running to move it; unplugging the cable dismisses it. |
+| Cover never turns off or locks by itself | Developer options → *Stay awake* keeps it on while charging (also over USB): `adb shell settings put global stay_on_while_plugged_in 0`. |
+| Our AOD doesn't show | Samsung's AOD must be on and set to "Always" (`aod_mode 1`, `aod_tap_to_show_mode 0`); without it the cover goes fully dark. |
 | Cover doesn't turn with the phone | The rotate tile must show *rotate* (not *locked*) and Shizuku must be running. Upside-down apps stay upside down whatever the tile says. |
 | Main screen should work again | `adb shell "pkill -f coverlauncher-fold; cmd device_state state reset"` |
 

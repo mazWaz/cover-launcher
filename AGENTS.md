@@ -15,7 +15,11 @@ Sideloaded on one phone; follows the mazWaz/android-skill conventions.
 ## Device rules
 - Every launch targets display 1: apps go through Shizuku (`am start --display 1`), because shell launches skip
   Samsung's "open phone to continue" block. Other activities use `coverOptions()`.
-- The keyguard is swipe-only; `Activity.unlockThen {}` dismisses it before opening anything.
+- Lock: `Activity.unlockThen {}` before opening anything. The launcher shows over the lock only when the device isn't
+  secure; with a PIN/pattern/password Samsung's cover lock (swipe, then its own PIN pad) comes first.
+  `requestDismissKeyguard` from our activity behind the lock brings up that cover PIN pad; shell
+  `cmd window dismiss-keyguard` shows the bouncer on the dead main display instead.
+- Anything drawn over the lock (pop-up, AOD) must follow the lock-screen notification settings: see `lockedView()`.
 - Camera cutout: bottom-right `Rect(379,654-748,720)` px. Keep tappable UI above 308 dp, or in the left half of the bottom strip.
   It turns with the cover (right at 90°, top at 180°, left at 270°): screens use `Modifier.cutoutSides()` for those.
 - Cover rotation: Android's auto-rotation never turns the cover. `CoverRotation` sets `cmd window user-rotation -d 1

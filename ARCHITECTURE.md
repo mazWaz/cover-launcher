@@ -10,11 +10,11 @@ com.mazwas.coverlauncher
 │   ├── presentation/              ObserveAsEvents
 │   └── navigation/                routes + AppNavHost (fades only)
 └── feature/
-    ├── cover/                     CoverService (reopens the launcher when Samsung's cover home shows), CoverPopup (its notification pop-up), CoverRotation (rotate tile, upside-down apps), Grants (shell setup), ShizukuAutoStart
+    ├── cover/                     CoverService (reopens the launcher when Samsung's cover home shows), CoverPopup (its notification pop-up), CoverAod (its AOD), CoverOverlay (their Compose window), CoverRotation (rotate tile, upside-down apps), Grants (shell setup), ShizukuAutoStart
     ├── launcher/
-    │   ├── domain/                LaunchableApp, LauncherNotification, SystemStatus, OpenTarget, LauncherSettings, filterApps, resolveDock, relativeAge, shouldPopUp, coverRotation
+    │   ├── domain/                LaunchableApp, LauncherNotification, SystemStatus, OpenTarget, LauncherSettings, filterApps, resolveDock, relativeAge, shouldPopUp, lockedView, coverRotation
     │   ├── data/                  AppsSource, IconLoader, SettingsStore, NotificationStore (+ listener), SystemStatusSource (+ toggles, cover brightness), MediaSource, CoverOpener
-    │   └── presentation/          LauncherActivity, contract, ViewModel, Root + Screen, HomePage/AppDrawer/NotificationPanel/Wallpaper, Icons, Gestures
+    │   └── presentation/          LauncherActivity, contract, ViewModel, Root + Screen, HomePage/AppDrawer/NotificationPanel/AodScreen/Wallpaper, Icons, Gestures
     └── settings/presentation/     Settings contract, ViewModel, Root + Screen
 ```
 

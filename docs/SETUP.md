@@ -73,7 +73,10 @@ Semua perintah di bawah dijalankan dari komputer. Format keluaran di kolom kanan
 | App terbuka di cover | buka app dari dock | muncul di cover, bukan di layar mati |
 | Pop-up Samsung mati (hanya bila Settings → pop-ups: *ours*) | `adb shell "settings get system edge_lighting; settings get secure cover_screen_show_notification"` | `0` dan `0` (pilihan *samsung*: `1` dan `1`) |
 | Rotasi cover | `adb shell "cmd window fixed-to-user-rotation -d 1; cmd window user-rotation -d 1"` | `enabled` lalu `lock N`; app *upside down* di depan → `lock 2` |
-| Pop-up launcher | minta orang lain mengirim pesan (notifikasi tes adb tidak pernah pop-up) | kartu di atas cover ±5 s, tanpa pil/kartu Samsung |
+| Pop-up launcher | minta orang lain mengirim pesan (notifikasi tes adb tidak pernah pop-up) | kartu di atas cover ±5 s, tanpa pil/kartu Samsung; saat AOD tidak muncul |
+| Kunci PIN dihormati | matikan lalu bangunkan cover | layar kunci Samsung (`mCurrentFocus=SubScreenLockWindow`), bukan launcher; launcher baru setelah PIN |
+| AOD sendiri (hanya bila Settings → aod: *ours*) | `adb shell "settings get system aod_mode; settings get system aod_tap_to_show_mode"` lalu matikan cover | `1` dan `0`; cover doze menampilkan jam titik launcher |
+| Cover mati sendiri | `adb shell settings get global stay_on_while_plugged_in` | `0` (selain 0, cover tidak mati selama dicas) |
 
 Kalau satu baris gagal: jalankan **Fix permissions** di Settings launcher (menjalankan ulang `Grants.apply()`),
 setelah memastikan Shizuku `ready`.

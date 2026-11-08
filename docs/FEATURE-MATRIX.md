@@ -60,7 +60,7 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 | Balas teks | `ReplyActivity` + `RemoteInput` | Tidak |
 | Balas suara | `SpeechRecognizer` di ReplyActivity | Tidak |
 | Pop-up di atas app | Banner overlay di display 1 (bisa dimatikan) | **Ya** (opt-in): kartu panel di overlay a11y display 1, 5 s; pop-up Samsung dimatikan selama itu (`edge_lighting`, `cover_screen_show_notification`). Teruji dengan pesan WhatsApp |
-| Peek dari lock screen → buka setelah unlock | `LockScreen.pendingOpen` + `openOnUnlock` | Sebagian: ketuk pop-up saat cover terkunci → launcher membuka kunci lalu notifikasinya (belum diuji) |
+| Peek dari lock screen → buka setelah unlock | `LockScreen.pendingOpen` + `openOnUnlock` | Ya: ketuk pop-up di layar kunci → PIN pad cover → notifikasi terbuka (terbukti). Pop-up mengikuti setelan privasi layar kunci |
 | Daftar, dismiss, clear all, pull-to-clear | Ya | Ya (kecuali pull-to-clear) |
 | Edge lighting | Overlay glow, warna per app, wake→glow→sleep | Tidak |
 
@@ -93,11 +93,11 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 
 | Fitur | OpenCover | Kita |
 |---|---|---|
-| AOD sendiri (jam, ikon notif, chip now-playing, timer mati, burn-in shift) | Ya (butuh AOD Samsung "Always", tap-to-show off) | Tidak (AOD Samsung) |
-| Lock screen sendiri + layout drag | Ya, swipe up → PIN Samsung | Tidak |
+| AOD sendiri (jam, ikon notif, chip now-playing, timer mati, burn-in shift) | Ya (butuh AOD Samsung "Always", tap-to-show off) | Sebagian (opt-in): jam Doto, status, ikon notif, jumlah alert, burn-in shift, 50 % terang, di atas AOD Samsung "Always". Belum: chip now-playing, timer mati |
+| Lock screen sendiri + layout drag | Ya, swipe up → PIN Samsung | Tidak (layar kunci + PIN Samsung; dengan PIN launcher tidak lagi tampil di atasnya) |
 | "Fingerprint opens Home" | Ya (secure settings) | Tidak |
-| Layar panggilan (answer, decline, answer muted, mute 30 menit) | Ya (notifikasi panggilan + `TelecomManager` + `ANSWER_PHONE_CALLS`) | Tidak (UI telepon Samsung) |
-| Panggilan internet (WA/Messenger) | Eksperimental | Tidak |
+| Layar panggilan (answer, decline, answer muted, mute 30 menit) | Ya (notifikasi panggilan + `TelecomManager` + `ANSWER_PHONE_CALLS`) | Tidak (UI telepon Samsung; HP ini tanpa SIM aktif) |
+| Panggilan internet (WA/Messenger) | Eksperimental | WhatsApp: layar panggilannya sendiri (`VoipActivityV2`) terbuka di cover; angkat, suara dua arah, speaker terbukti 2026-11-08. Tanpa layar buatan sendiri |
 
 ## I. Baterai & sistem (semua lewat Shizuku)
 

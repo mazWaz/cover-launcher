@@ -17,6 +17,7 @@ Karena itu tidak perlu root dan tidak perlu MultiStar. Allowlist cover milik Mul
 | Izin | `feature/cover/Grants.kt` | 6 perubahan sistem: state lipat (+ penjaga), overlay appop, listener notifikasi, DND, accessibility, allowlist cover MultiStar; plus pop-up Samsung, hanya saat pilihan pop-up berubah (§9) |
 | Home takeover | `feature/cover/CoverService.kt` | accessibility service: timpa cover home, tarik app dari layar mati, orkestrasi autostart Shizuku |
 | Rotasi | `feature/cover/CoverRotation.kt` | tile rotate/locked dari sensor orientasi, app terbalik 180° selama di depan (§10) |
+| AOD | `feature/cover/CoverAod.kt` | overlay hitam dengan `AodScreen` di atas AOD Samsung selama cover doze (§11) |
 | Pop-up | `feature/cover/CoverPopup.kt` | jendela overlay `CoverService` di display 1: notifikasi baru yang penting, 5 s (§9) |
 | Autostart | `feature/cover/ShizukuAutoStart.kt` | sekali per boot: buka Shizuku dan tekan Start |
 | Shell | `core/system/Shell.kt` | `Shizuku.newProcess` (reflection) → perintah sebagai uid 2000 |
@@ -102,8 +103,16 @@ tombolnya tidak ditemukan dan pengguna harus menekan Start sendiri.
 | Halaman sistem | Panel sistem bila ada (`Settings.Panel.ACTION_WIFI`, `ACTION_INTERNET_CONNECTIVITY`, `ACTION_VOLUME`), selain itu intent settings biasa — dimulai lewat shell supaya diizinkan di cover. |
 | App info / uninstall | intent `ACTION_APPLICATION_DETAILS_SETTINGS` / `ACTION_DELETE`. |
 
-Keyguard cover hanya swipe; semua pembukaan dibungkus `unlockThen { }` (`requestDismissKeyguard`).
-`LauncherActivity` sendiri memakai `setShowWhenLocked(true)` supaya langsung tampil saat cover bangun.
+Semua pembukaan dibungkus `unlockThen { }` (`requestDismissKeyguard`). `LauncherActivity` memanggil
+`setShowWhenLocked(!isDeviceSecure)` di `onStart`: kunci swipe → launcher langsung tampil saat cover bangun; PIN/pola/
+password → launcher menunggu di belakang kunci Samsung (layar kunci cover, geser, PIN pad cover), lalu CoverService
+membawanya kembali. Terukur 2026-11-08: dengan `setShowWhenLocked(true)` dan PIN, launcher (panel notifikasi, tile cepat,
+Settings) tampil di atas kunci walau keyguard tetap `showing=true`; app tetap minta PIN.
+
+Dua jalan ke PIN pad, terukur di HP: `requestDismissKeyguard` dari activity kita di belakang kunci memunculkan PIN pad
+**cover** (`SubLauncher:BouncerViewController requestBouncerWithIntent … PIN`), lalu setelah PIN target dibuka;
+`cmd window dismiss-keyguard` dari shell memunculkan bouncer di **layar utama** yang mati (`Bouncer` display 0), jadi
+tidak dipakai. Lompat langsung ke PIN saat cover bangun tidak ada jalannya yang bersih; layar kunci Samsung dibiarkan.
 
 ## 5. Menarik app yang nyangkut di layar mati
 
@@ -128,7 +137,7 @@ Clock                                                  LauncherAction → ViewMo
 | `NotificationStore` | `NotificationListenerService` menyimpan `StatusBarNotification` mentah (untuk dibuka/dibatalkan); `FLAG_GROUP_SUMMARY` dan yang tanpa judul+teks dibuang; `popups` = notifikasi yang baru saja lolos `shouldPopUp` (§9) |
 | `SystemStatusSource` | battery, wifi, BT, torch, DND, airplane, data, ringer, location, power saver. Toggle lewat `Shell` (tabel di §8), data lewat `ContentObserver` pada `Settings.Global.mobile_data` |
 | `MediaSource` | `MediaSessionManager.getActiveSessions(listener)` + `OnActiveSessionsChangedListener`, menumpang izin listener notifikasi; mengikuti sesi teratas saja (paket, judul, artis, playing) dan mengirim ⏮ ⏯ ⏭ lewat `transportControls`. Ketuk judul = buka app paket itu lewat jalur app biasa. Selama pemutar tampil, notifikasi ber-`EXTRA_MEDIA_SESSION` dari paket yang sama tidak masuk daftar (`listedNotifications`) |
-| `SettingsStore` | DataStore `launcher`: dock, `IconStyle`, `wallpaperVersion`, `dotFilter`, `popups`, `flipped` (paket terbalik); gambar di `filesDir/wallpaper.jpg` |
+| `SettingsStore` | DataStore `launcher`: dock, `IconStyle`, `wallpaperVersion`, `dotFilter`, `popups`, `flipped` (paket terbalik), `aod`; gambar di `filesDir/wallpaper.jpg` |
 | `IconLoader` | `resolveActivity().getIcon()` → mono (layer monochrome di atas disc, fallback greyscale) atau warna; `LruCache` 256; ikon notifikasi = smallIcon putih |
 | `Clock` | tick tiap batas menit, format 12/24 jam ikut sistem |
 
@@ -187,12 +196,25 @@ launcher sendiri tidak.
 memasang `ComposeView` sebagai `TYPE_ACCESSIBILITY_OVERLAY` di display 1 (jenis jendela yang sama dengan keep awake),
 lebar penuh, tinggi sesuai isi, di atas; `FLAG_NOT_FOCUSABLE`, jadi sentuhan di luar kartu jatuh ke app di bawahnya.
 Isinya `NotificationRow` milik panel. Compose di luar activity butuh lifecycle + saved-state owner di view tree:
-`AlwaysResumed`. Fade masuk 200 ms / keluar 150 ms (ease-out), hilang sendiri setelah 5 s; notifikasi lebih baru
-menggantikan yang tampil dan mengulang timer.
+`AlwaysResumed` (jendelanya dibuat `addCoverOverlay()` di `CoverOverlay.kt`, dipakai juga oleh AOD). Fade masuk
+200 ms / keluar 150 ms (ease-out), hilang sendiri setelah 5 s; notifikasi lebih baru menggantikan yang tampil dan
+mengulang timer.
+
+**Tidak di atas AOD**: hanya saat `PowerManager.isInteractive`. Cover yang doze tidak menerima geser, dan AOD sudah
+menandai alert baru (ikon + jumlah) tanpa teksnya. Terukur 2026-11-08: sebelum aturan ini nama dan pesan tertahan di
+cover yang doze; sesudahnya pesan saat AOD tidak membuat jendela pop-up.
+
+**Di atas kunci PIN/pola/password** (`keyguard.isKeyguardLocked && isDeviceSecure`) pop-up mengikuti aturan layar kunci
+Android, `lockedView()`: `lock_screen_show_notifications` 0 atau visibilitas *secret* → tidak muncul;
+`lock_screen_allow_private_notifications` 0 dan *private* → versi publik notifikasi (`publicVersion`, mis. WhatsApp
+"1 new message", atau "contents hidden") tanpa tombol; selain itu lengkap. Visibilitas = `lockscreenVisibility` channel
+bila diset, selain itu milik notifikasi. Kedua setelan dibaca langsung (`Settings.Secure`, terbukti terbaca di HP);
+kalau tak terbaca: tetap muncul tapi tanpa isi pribadi. Terbukti dengan setelan "sembunyikan isi" sementara: pop-up di
+layar kunci hanya "WhatsApp · 1 new message".
 
 | Gesture | Aksi |
 |---|---|
-| Ketuk / tombol | cover terkunci: `LauncherActivity.openNotification()` → launcher `unlockThen { CoverOpener.open() }`; tidak terkunci: `CoverOpener.open()` langsung, di atas app yang sedang tampil |
+| Ketuk / tombol | cover terkunci: `LauncherActivity.openNotification()` → launcher di belakang kunci `unlockThen { CoverOpener.open() }` → PIN pad cover → setelah PIN notifikasinya dibuka (terbukti: chat WhatsApp tampil 0,3 s setelah PIN); tidak terkunci: `CoverOpener.open()` langsung, di atas app yang sedang tampil |
 | Geser ke samping | `NotificationStore.dismiss()` (sama dengan panel) |
 | Geser ke atas | sembunyikan pop-up saja |
 
@@ -215,8 +237,8 @@ Terbukti 2026-11-08 dengan pesan WhatsApp sungguhan (log + tangkapan layar cover
 Jadi `heads_up_notifications_enabled` tidak berpengaruh di cover. Dengan pilihan *ours*: pop-up launcher tampil,
 pop-up Samsung tidak, notifikasi tetap masuk panel, dan ketukan pada kartu membuka chat di cover.
 Notifikasi tes dari adb (`cmd notification post`, channel `shell_cmd` importance 3) tidak pernah memunculkan pop-up;
-uji butuh pesan sungguhan. Belum diuji: geser, tombol, ketuk saat cover terkunci, dan apakah cover menyala sendiri
-untuk notifikasi saat kedua setelan Samsung `0`.
+uji butuh pesan sungguhan. Belum diuji: geser, tombol, dan apakah cover menyala sendiri untuk notifikasi saat kedua
+setelan Samsung `0`.
 
 Uninstall saat pilihan *ours* membiarkan kedua setelan `0`; kembalikan dengan nilai `1` (lihat [SETUP](SETUP.md) §7).
 
@@ -248,6 +270,23 @@ benar di HP). Saat mulai mendengar, titik awalnya rotasi cover sekarang, supaya 
 tidak bisa diubah ukurannya (`RESIZE_MODE_UNRESIZEABLE`), jadi tombol skill di kanan bawah jatuh di bawah kamera.
 Diputar 180°, kamera ada di kiri atas (menutup separuh atas minimap dan ikon ⚙). Yang dicoba dan tidak menolong:
 `useLetterbox` di `multistar_setting_json_repository` (jendela tetap 748×720), override compat Android untuk cutout.
+
+## 11. AOD sendiri
+
+Opt-in: Settings → home → *aod: ours*. Saat `ACTION_SCREEN_OFF`, `CoverAod` memasang overlay hitam penuh
+(`TYPE_ACCESSIBILITY_OVERLAY`, `PixelFormat.OPAQUE`, cutout `ALWAYS`, `FLAG_NOT_TOUCHABLE`) berisi `AodScreen`: baris
+status, jam dan baris tanggal milik Home (tanpa dock), dari `Clock.ticks`, `SystemStatusSource.status` dan
+`NotificationStore.notifications`. Dilepas saat `ACTION_SCREEN_ON`.
+
+Bergantung pada AOD Samsung: cover hanya *doze* (bukan mati) kalau AOD Samsung hidup dan selalu tampil
+(`system aod_mode 1`, `aod_tap_to_show_mode 0`); overlay kita menutupinya. Terukur 2026-11-08: cover `Dozing`, display 1
+`DOZE_SUSPEND`, overlay tampil, dan jam berganti tiap menit (dilihat langsung di HP; DozeService Samsung tetap
+menyegarkan layar tiap menit). Konten 50 % alpha (putih penuh terlalu terang di HP) dan digeser ±6 dp tiap menit
+melawan burn-in. Tidak bisa disentuh: ketuk ganda untuk bangun dan perlindungan saku (`screen_off_pocket`,
+`PocketModeEvent` saat bangun) tetap milik Samsung. Belum diuji: AOD saat sensor jarak tertutup / di saku, dan di 180°.
+
+Kalau HP tidak pernah masuk AOD saat dicas: opsi pengembang *Stay awake* (`stay_on_while_plugged_in` 15) menahan
+layar selama dicas, juga lewat USB; di HP ini dimatikan (0) 2026-11-08.
 
 ## Batasan yang disengaja
 

@@ -146,8 +146,9 @@ tanpa perubahan arsitektur (kecuali baris izin `WRITE_SECURE_SETTINGS` dan satu 
 
 ## Yang sengaja tidak diambil
 
-Mirror layar dalam dan resize layar dalam (tidak ada gunanya tanpa panel dalam); AOD/lock screen sendiri
-(Samsung sudah punya, overlay di atas keyguard menambah jalur rawan); widget home, icon pack, wallpaper
+Mirror layar dalam dan resize layar dalam (tidak ada gunanya tanpa panel dalam); lock screen sendiri
+(Samsung sudah punya, overlay di atas keyguard menambah jalur rawan; AOD sendiri akhirnya diambil, lihat
+[HOW-IT-WORKS](HOW-IT-WORKS.md) §11); layar panggilan sendiri (layar WhatsApp sendiri sudah jalan di cover); widget home, icon pack, wallpaper
 animasi (kosmetik, bertabrakan dengan gaya monokrom); nav bar sendiri (nav bar Samsung sudah jalan).
 
 Desktop di monitor USB-C **tidak** masuk daftar buang: panel dalam tidak dipakai, dan dengan monitor

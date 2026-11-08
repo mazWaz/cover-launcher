@@ -3,7 +3,7 @@
 Pembanding: [Shmubbier/OpenCover](https://github.com/Shmubbier/OpenCover) (GPL-3.0) — launcher FOSS untuk
 cover Z Flip5. Analisis di bawah dari **source**, bukan README: commit `1fb97ca` (2026-11-06, sesudah tag
 `v0.2`), 116 file Kotlin di `app/src/main`, 13.765 LOC, 18 paket fitur (+ `ui/`), 39 file unit test.
-Repo ini ±4.100 baris (38 file Kotlin, modul `app`, tanpa test).
+Repo ini ±4.500 baris (40 file Kotlin, modul `app`, tanpa test).
 
 Angka LOC di tabel = ukuran paketnya di OpenCover, patokan kasar biaya fitur itu — bukan biaya kita.
 
@@ -20,7 +20,7 @@ Status perangkat: `com.mazwas.coverlauncher` belum terpasang; yang jalan `dev.op
 | Relevan untuk HP panel-mati | ±1.788 LOC: `notify/` 430, `quick/` 409, `media/` 215, `edge/` 216, `phone/{DisplayTweaks,Rotation,RotationFeature,AppDensity,PhonePrefs}` 335, `watcher/{KeepAwake,BankingMode,BankingRules}` 183 |
 | Tiga prioritas (aksi notifikasi, media, tile+brightness) | ±700 LOC |
 | Sengaja tidak diambil | `mirror/` 858, `keyboard/` 721, `lock/` 555, `nav/` 525, `call/` 448, `home/`+`layout/`+`widgets/`+`look/` ±1.100 |
-| Repo ini sebagai pembanding | ±4.100 baris (modul `app`, tanpa test) |
+| Repo ini sebagai pembanding | ±4.500 baris (modul `app`, tanpa test) |
 | Mekanisme inti yang belum ada | daftar app ke cover lewat MultiStar (`multistar_setting_repository`), foreground service + boot receiver, overlay 1×1 (BAL/keep-awake), tombol approve dialog debugging |
 
 Artinya selisih fungsionalnya kecil: yang hilang dari cover-launcher adalah lapisan pemakaian
@@ -39,7 +39,7 @@ tanpa izin internet.
 | Fitur | Di OpenCover | API inti | Effort kita |
 |---|---|---|---|
 | Aksi notifikasi (maks 3 tombol) | `notify/` 430 LOC; `Notification.Action` → `NoteAction(title, acceptsReply)` | `SBN.notification.actions` + `PendingIntent.send` | S |
-| Balas teks/suara | `ReplyActivity`: `RemoteInput.addResultsToIntent` + `SpeechRecognizer` | `RemoteInput`, `RecognizerIntent` | M — isi teks butuh keyboard (baris keyboard) |
+| Balas teks/suara | `ReplyActivity`: `RemoteInput.addResultsToIntent` + `SpeechRecognizer` | `RemoteInput`, `SpeechRecognizer` | M — **selesai**: keyboard Samsung sudah jalan di cover |
 | Heads-up di atas app mana pun | `notify/Banner.kt` | `createDisplayContext(cover).createWindowContext(TYPE_APPLICATION_OVERLAY)` di display 1 | M |
 | Media player | `media/` 215 LOC: `MediaSessionManager.getActiveSessions(NotificationAccess)` + `MediaControllerCompat`, multi-sesi, shuffle/repeat/seek | izin notification access yang sudah kita pegang | S |
 | Brightness cover | `quick/QuickState.kt`: `settings get\|put system sub_screen_brightness` (1..255) | **kunci Samsung sendiri, lewat Shizuku** | S |
@@ -120,7 +120,7 @@ get-allowed-network-types-for-users -s 0` → `No valid subscription found`, jad
 
 ## Urutan pengerjaan
 
-1. ~~**Aksi notifikasi**~~ — **selesai**: maks 3 tombol, Balas membuka app, notifikasi panggilan tanpa tombol
+1. ~~**Aksi notifikasi**~~ — **selesai**: maks 3 tombol, notifikasi panggilan tanpa tombol
    (Answer dari listener tidak pernah membuat panggilan WA aktif di HP ini).
 2. ~~**Media player**~~ **selesai (minimal)**: baris di panel, sesi teratas, ⏮ ⏯ ⏭; `MediaSessionManager` menumpang
    izin listener. Tanpa pilihan sesi, seek, sampul.
@@ -140,7 +140,8 @@ get-allowed-network-types-for-users -s 0` → `No valid subscription found`, jad
    (`MY_PACKAGE_REPLACED`) membuat app menyala lagi setelah update; boot ditangani a11y service. Tanpa FGS.
 7. **Edge lighting** — kecil, kerjakan kalau mengganggu. ~~Banking step-aside~~ **selesai**: banking mode
    ([HOW-IT-WORKS](HOW-IT-WORKS.md) §12).
-8. **Balas teks** — baru setelah ada keyboard yang bisa hidup di cover (±700 LOC IME).
+8. ~~**Balas teks**~~ **selesai**: kotak balas + dikte, keyboard Samsung cukup (tanpa IME sendiri);
+   [HOW-IT-WORKS](HOW-IT-WORKS.md) §15. ~~Deep sleep~~ juga selesai (§16), begitu pula baris lagu di AOD.
 9. **Desktop di monitor** — opsional, hanya kalau ada monitor USB-C; 1.451 LOC di OpenCover.
 
 Tiga yang pertama hanya menyentuh `NotificationStore`, `NotificationPanel`, `SettingsStore`, `CoverOpener`:

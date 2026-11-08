@@ -56,9 +56,9 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 
 | Fitur | OpenCover | Kita |
 |---|---|---|
-| Aksi (maks 3 tombol) | Ya (`Notification.Action`) | Ya; Balas membuka app, panggilan tanpa tombol |
-| Balas teks | `ReplyActivity` + `RemoteInput` | Tidak |
-| Balas suara | `SpeechRecognizer` di ReplyActivity | Tidak |
+| Aksi (maks 3 tombol) | Ya (`Notification.Action`) | Ya; panggilan tanpa tombol |
+| Balas teks | `ReplyActivity` + `RemoteInput` | Ya: kotak balas di launcher (panel dan pop-up), `RemoteInput`, keyboard Samsung; terbukti dengan WhatsApp |
+| Balas suara | `SpeechRecognizer` di ReplyActivity | Ya: `SpeechRecognizer` di proses kita, hasil masuk kotak balas; terbukti |
 | Pop-up di atas app | Banner overlay di display 1 (bisa dimatikan) | **Ya** (opt-in): kartu panel di overlay a11y display 1, 5 s; pop-up Samsung dimatikan selama itu (`edge_lighting`, `cover_screen_show_notification`). Teruji dengan pesan WhatsApp |
 | Peek dari lock screen → buka setelah unlock | `LockScreen.pendingOpen` + `openOnUnlock` | Ya: ketuk pop-up di layar kunci → PIN pad cover → notifikasi terbuka (terbukti). Pop-up mengikuti setelan privasi layar kunci |
 | Daftar, dismiss, clear all, pull-to-clear | Ya | Ya (kecuali pull-to-clear) |
@@ -69,7 +69,7 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 | Fitur | OpenCover | Kita |
 |---|---|---|
 | Panel media | Ya: multi-sesi, sampul, seek di tepi, volume di tepi, shuffle/repeat, layout klasik | Ya, minimal: sesi teratas, judul + artis, ⏮ ⏯ ⏭ |
-| Chip now-playing di AOD/lock | Ya | Tidak |
+| Chip now-playing di AOD/lock | Ya | AOD: ▷ judul · artis di bawah tanggal, hanya tampilan (AOD tidak bisa disentuh); terbukti. Lock: tidak |
 
 ## F. Quick settings
 
@@ -93,7 +93,7 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 
 | Fitur | OpenCover | Kita |
 |---|---|---|
-| AOD sendiri (jam, ikon notif, chip now-playing, timer mati, burn-in shift) | Ya (butuh AOD Samsung "Always", tap-to-show off) | Sebagian (opt-in): jam Doto, status, ikon notif, jumlah alert, burn-in shift, 50 % terang, di atas AOD Samsung "Always". Belum: chip now-playing, timer mati |
+| AOD sendiri (jam, ikon notif, chip now-playing, timer mati, burn-in shift) | Ya (butuh AOD Samsung "Always", tap-to-show off) | Sebagian (opt-in): jam Doto, status, ikon notif, jumlah alert, burn-in shift, 50 % terang, di atas AOD Samsung "Always", lagu yang diputar, jam ikut `TIME_TICK` (jalan juga dalam Doze dalam). Belum: timer mati |
 | Lock screen sendiri + layout drag | Ya, swipe up → PIN Samsung | Tidak (layar kunci + PIN Samsung; dengan PIN launcher tidak lagi tampil di atasnya) |
 | "Fingerprint opens Home" | Ya (secure settings) | Tidak |
 | Layar panggilan (answer, decline, answer muted, mute 30 menit) | Ya (notifikasi panggilan + `TelecomManager` + `ANSWER_PHONE_CALLS`) | Tidak (UI telepon Samsung; HP ini tanpa SIM aktif) |
@@ -103,7 +103,7 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 
 | Fitur | OpenCover | Kita |
 |---|---|---|
-| Deep sleep dipaksa saat idle | Ya (`dumpsys deviceidle force-idle deep` lewat Shizuku; sensor gerak mati = tidak pernah doze sendiri) | Tidak |
+| Deep sleep dipaksa saat idle | Ya (`dumpsys deviceidle force-idle deep` lewat Shizuku; sensor gerak mati = tidak pernah doze sendiri) | Ya (opt-in): perintah sama, 5–9 menit setelah cover mati tanpa cas; `unforce; motion` saat cover menyala. Terbukti |
 | 5G on/off | Ya (`cmd phone get/set-allowed-network-types-for-users -s 0`) | Tidak |
 | Restrict app di background | Ya (`cmd appops RUN_ANY_IN_BACKGROUND ignore` + `am set-standby-bucket restricted`) | Ya: drawer → *background: restricted*, perintah sama (belum diuji di HP) |
 | Heat guard (42 °C peringatan, 45 °C matikan hotspot/mirror) | Ya, jalan di FGS | Ya, di a11y service: 42 °C kartu + suhu merah di Home; 45 °C keep awake dan torch mati, cover redup 40/255 (terbukti dengan `dumpsys battery set temp`) |
@@ -151,9 +151,9 @@ Catatan: desktop di monitor tetap berguna walau panel dalam mati — output-nya 
 
 | | OpenCover | Kita |
 |---|---|---|
-| LOC | 13.765 (116 file) | ±4.100 baris (38 file) |
+| LOC | 13.765 (116 file) | ±4.500 baris (40 file) |
 | Paket fitur | 18 (+ `ui/`) | 3 (`cover`, `launcher`, `settings`) + modul `covercam` |
 | Unit test | 39 file | lihat `app/src/test` |
-| Izin manifest | 20 (INTERNET, NFC, VIBRATE, ANSWER_PHONE_CALLS, READ_PHONE_STATE, PACKAGE_USAGE_STATS, FGS×3, RECEIVE_BOOT_COMPLETED, WRITE_SECURE_SETTINGS, …) | 6 (SYSTEM_ALERT_WINDOW, QUERY_ALL_PACKAGES, REQUEST_DELETE_PACKAGES, ACCESS_WIFI_STATE, ACCESS_NETWORK_STATE, NFC) |
+| Izin manifest | 20 (INTERNET, NFC, VIBRATE, ANSWER_PHONE_CALLS, READ_PHONE_STATE, PACKAGE_USAGE_STATS, FGS×3, RECEIVE_BOOT_COMPLETED, WRITE_SECURE_SETTINGS, …) | 7 (SYSTEM_ALERT_WINDOW, QUERY_ALL_PACKAGES, REQUEST_DELETE_PACKAGES, ACCESS_WIFI_STATE, ACCESS_NETWORK_STATE, NFC, RECORD_AUDIO) |
 | Service | FGS watcher + a11y + notification listener + mirror service | a11y + notification listener |
 | Receiver | boot/update | update (`MY_PACKAGE_REPLACED`); boot ditangani a11y service |

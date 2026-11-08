@@ -29,7 +29,10 @@ Sideloaded on one phone; follows the mazWaz/android-skill conventions.
 - Banking mode: banking apps refuse to run beside an accessibility service. `Grants.bankingMode` takes CoverService
   off before such an app opens; a shell watcher (`coverlauncher-bank`) puts it back once the app leaves. Everything
   CoverService does (cover home takeover, pop-up, AOD, rotation, keep awake) pauses meanwhile.
-- Grants (overlay appop, notification listener, accessibility service, fold state) are re-applied through Shizuku in `App.kt`.
+- Grants (overlay appop, notification listener, accessibility service, fold state, microphone) are re-applied through Shizuku in `App.kt`.
+- Timing on the dozing cover: never `delay()`/`Handler` (they count uptime, which stops while the CPU sleeps: the AOD
+  clock froze). Use broadcasts (`TIME_TICK` keeps coming even in deep Doze) or `AlarmManager`.
+- Doze judges "screen on" by the dead main display: leaving a forced deep idle needs `unforce; motion`.
 - Samsung's cover pop-ups: `system edge_lighting` (brief pill) and `secure cover_screen_show_notification` (detailed
   card); `global heads_up_notifications_enabled` does nothing on the cover. adb test notifications never pop up
   (channel `shell_cmd`, importance 3): pop-up tests need a real message.

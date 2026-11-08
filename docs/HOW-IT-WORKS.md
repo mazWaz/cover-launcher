@@ -19,6 +19,8 @@ Karena itu tidak perlu root dan tidak perlu MultiStar. Allowlist cover milik Mul
 | Rotasi & density | `feature/cover/CoverDisplay.kt` | untuk app di depan: rotasi (tile rotate/locked dari sensor orientasi, atau rotasi app sendiri) dan density (§10) |
 | Banking mode | `Grants.bankingMode` + proses shell `coverlauncher-bank` | `CoverService` mati selama app bank di depan (§12) |
 | Heat guard | `CoverService.onTemperature` | peringatan 42 °C, pemangkasan 45 °C (§13) |
+| Balas | `ReplySheet` + `CoverOpener.reply` + `VoiceInput` | balas notifikasi lewat `RemoteInput`, ketik atau dikte (§15) |
+| Deep sleep | `CoverService` (alarm) | Doze dalam dipaksa saat cover mati lama (§16) |
 | AOD | `feature/cover/CoverAod.kt` | overlay hitam dengan `AodScreen` di atas AOD Samsung selama cover doze (§11) |
 | Pop-up | `feature/cover/CoverPopup.kt` | jendela overlay `CoverService` di display 1: notifikasi baru yang penting, 5 s (§9) |
 | Autostart | `feature/cover/ShizukuAutoStart.kt` | sekali per boot: buka Shizuku dan tekan Start |
@@ -103,7 +105,7 @@ tombolnya tidak ditemukan dan pengguna harus menekan Start sendiri.
 | App | `am start --display 1 -a MAIN -c LAUNCHER -f 0x10200000 -n pkg/cls`. Dimulai oleh shell, jadi Samsung melewati pemeriksaan "hanya app MultiStar di cover". Tanpa Shizuku: `startActivity` + `coverOptions()`, yang Samsung izinkan untuk app di daftar cover MultiStar. |
 | Daftar cover MultiStar | Secure setting `multistar_setting_repository`: 30 slot dipisah `/`, slot 26 = `pkg,userId` dipisah `;` (`0` bila kosong). Tiap kali Shizuku tersambung, `Grants` menambahkan setiap app yang bisa dibuka (user 0, tanpa launcher sendiri) lewat `withCoverApps()`: hanya menambah, slot lain tak disentuh, tidak menulis bila tak ada yang kurang. Nilai sebelum perubahan pertama disalin ke `/data/local/tmp/coverlauncher-multistar.bak`. Terukur 2026-11-08: 35 → 40 entri, 29 slot lain identik. Uji A/B dengan server Shizuku dihentikan (launcher memakai `startActivity`, tanpa `shell am start` di log): Google TV **di luar** daftar → task dibuat lalu langsung ditutup, launcher tetap di depan; Google TV **di dalam** daftar → tampil di cover (display 1). |
 | Notifikasi | `notification.contentIntent.send(..., coverOptions())`; kalau gagal, buka launch intent paketnya; `FLAG_AUTO_CANCEL` → notifikasi dibatalkan setelah dibuka. |
-| Tombol notifikasi | Maks 3 per notifikasi: `action.actionIntent.send(..., coverOptions())`. Tombol dengan `RemoteInput` (Balas) membuka notifikasinya; notifikasi `category=call` tanpa tombol. |
+| Tombol notifikasi | Maks 3 per notifikasi: `action.actionIntent.send(..., coverOptions())`. Tombol dengan `RemoteInput` teks bebas (Balas) membuka kotak balas (§15); yang hanya punya pilihan tetap membuka notifikasinya; notifikasi `category=call` tanpa tombol. |
 | Halaman sistem | Panel sistem bila ada (`Settings.Panel.ACTION_WIFI`, `ACTION_INTERNET_CONNECTIVITY`, `ACTION_VOLUME`), selain itu intent settings biasa — dimulai lewat shell supaya diizinkan di cover. |
 | App info / uninstall | intent `ACTION_APPLICATION_DETAILS_SETTINGS` / `ACTION_DELETE`. |
 
@@ -143,7 +145,7 @@ Clock                                                  LauncherAction → ViewMo
 | `MediaSource` | `MediaSessionManager.getActiveSessions(listener)` + `OnActiveSessionsChangedListener`, menumpang izin listener notifikasi; mengikuti sesi teratas saja (paket, judul, artis, playing) dan mengirim ⏮ ⏯ ⏭ lewat `transportControls`. Ketuk judul = buka app paket itu lewat jalur app biasa. Selama pemutar tampil, notifikasi ber-`EXTRA_MEDIA_SESSION` dari paket yang sama tidak masuk daftar (`listedNotifications`) |
 | `SettingsStore` | DataStore `launcher`: dock, `IconStyle`, `wallpaperVersion`, `dotFilter`, `popups`, `aod`, `rotations` / `densities` (set `paket=nilai`; `flipped` lama dibaca sebagai 180°), `density` (cover), `restricted`, `tiles` (urutan) / `hidden_tiles`, `banking`; gambar di `filesDir/wallpaper.jpg` |
 | `IconLoader` | `resolveActivity().getIcon()` → mono (layer monochrome di atas disc, fallback greyscale) atau warna; `LruCache` 256; ikon notifikasi = smallIcon putih |
-| `Clock` | tick tiap batas menit, format 12/24 jam ikut sistem |
+| `Clock` | broadcast `TIME_TICK` (+ `TIME_SET`, `TIMEZONE_CHANGED`), format 12/24 jam ikut sistem. Bukan `delay()`: itu menghitung uptime, yang berhenti saat CPU tidur (§11) |
 
 Yang butuh Activity (keyguard, membuka app) keluar sebagai `LauncherEvent` lewat `Channel`, dijalankan di Root.
 Overlay drawer/panel adalah `enum Overlay` di state internal ViewModel, bukan rute navigasi.
@@ -288,13 +290,21 @@ Diputar 180°, kamera ada di kiri atas (menutup separuh atas minimap dan ikon �
 
 Opt-in: Settings → home → *aod: ours*. Saat `ACTION_SCREEN_OFF`, `CoverAod` memasang overlay hitam penuh
 (`TYPE_ACCESSIBILITY_OVERLAY`, `PixelFormat.OPAQUE`, cutout `ALWAYS`, `FLAG_NOT_TOUCHABLE`) berisi `AodScreen`: baris
-status, jam dan baris tanggal milik Home (tanpa dock), dari `Clock.ticks`, `SystemStatusSource.status` dan
-`NotificationStore.notifications`. Dilepas saat `ACTION_SCREEN_ON`.
+status, jam dan baris tanggal milik Home (tanpa dock) dan, selama ada yang diputar, ▷ judul · artis, dari
+`Clock.ticks`, `SystemStatusSource.status`, `NotificationStore.notifications` dan `MediaSource.nowPlaying`. Dilepas saat
+`ACTION_SCREEN_ON`. Baris lagu terbukti 2026-11-08 (screenshot saat YouTube memutar).
 
 Bergantung pada AOD Samsung: cover hanya *doze* (bukan mati) kalau AOD Samsung hidup dan selalu tampil
 (`system aod_mode 1`, `aod_tap_to_show_mode 0`); overlay kita menutupinya. Terukur 2026-11-08: cover `Dozing`, display 1
-`DOZE_SUSPEND`, overlay tampil, dan jam berganti tiap menit (dilihat langsung di HP; DozeService Samsung tetap
-menyegarkan layar tiap menit). Konten 50 % alpha (putih penuh terlalu terang di HP) dan digeser ±6 dp tiap menit
+`DOZE_SUSPEND`, overlay tampil.
+
+**Jam yang macet.** Dulu `Clock.ticks` menunggu batas menit dengan `delay()`. Selama sesuatu menahan CPU (musik) jamnya
+jalan; begitu player berhenti, jam AOD berhenti dan baru menyusul terlambat (dilaporkan pengguna 2026-11-08).
+`delay()`/`Handler` menghitung uptime, dan uptime berhenti saat CPU tidur. Sekarang jam mengikuti broadcast `TIME_TICK`,
+yang tetap datang tiap menit bahkan dalam Doze dalam paksa (riwayat `dumpsys alarm`: 20:48, 20:49, 20:50), sementara
+AOD Samsung memegang `DRAW_WAKE_LOCK` `AOD_OnTick` ±200 ms di :00.02 tiap menit. Terbukti 21:10–21:13 dalam Doze dalam
+paksa tanpa adb di tengahnya: frame jendela AOD (`dumpsys gfxinfo`, satu-satunya root yang tampil) 109 → 115 dalam
+3 menit, screenshot 21:13:41 menunjukkan 9:13. Konten 50 % alpha (putih penuh terlalu terang di HP) dan digeser ±6 dp tiap menit
 melawan burn-in. Tidak bisa disentuh: ketuk ganda untuk bangun dan perlindungan saku (`screen_off_pocket`,
 `PocketModeEvent` saat bangun) tetap milik Samsung. Belum diuji: AOD saat sensor jarak tertutup / di saku, dan di 180°.
 
@@ -348,9 +358,42 @@ dengan `dumpsys battery reset`. Hotspot/mirror (yang dimatikan OpenCover) tidak 
 - **Background** per app (drawer): `cmd appops set <pkg> RUN_ANY_IN_BACKGROUND ignore|allow` +
   `am set-standby-bucket <pkg> restricted|active`. Belum diuji di HP (belum ada app yang dibatasi).
 
+## 15. Balas dari cover
+
+`toDomain()` mencatat `reply` = indeks tombol (di antara tiga yang tampil) yang punya `RemoteInput` dengan
+`allowFreeFormInput`. Tombol itu di panel tidak dijalankan: `LauncherViewModel` membuka `ReplySheet` (isi pesan, kotak teks
+di atas sehingga keyboard Samsung di bawahnya tidak menutupinya dan tidak ada tombol di area kamera, 🎤, kirim; Back
+menutup). Kirim = `OpenTarget.Reply` → `CoverOpener.reply()`: `RemoteInput.addResultsToIntent` untuk input teks bebas,
+`setResultsSource(SOURCE_FREE_FORM_INPUT)`, lalu `actionIntent.send(context, 0, intent)`, seperti balasan dari notifikasi
+app itu sendiri. Pop-up tidak bisa menerima ketikan (jendelanya `FLAG_NOT_FOCUSABLE`): *Reply* di sana memulai
+`LauncherActivity.reply(key)`, yang membuka kunci dulu lalu meneruskan key lewat `MutableStateFlow` ke `LauncherRoot`
+(diambil saat `RESUMED`, sesudah reset `ON_START`).
+
+Dikte: `VoiceInput` memakai `SpeechRecognizer` di proses kita (layanan bawaan `voice_recognition_service` = Google TTS),
+hasil sementara langsung masuk kotak, di belakang teks yang sudah diketik. Activity `RECOGNIZE_SPEECH` di HP ini milik
+`com.google.android.tts`, yang tidak ada di daftar cover, jadi tidak dipakai. `RECORD_AUDIO` diberikan `Grants` lewat
+`pm grant` dan masuk daftar cek (*microphone*).
+
+Terbukti 2026-11-08 dengan WhatsApp: notifikasinya mencatat balasan yang diketik sebagai `sender=You`, dan balasan hasil
+dikte ikut terkirim.
+
+## 16. Deep sleep
+
+Opt-in: Settings → battery → *deep sleep*. Doze dalam Android tidak datang sendiri di HP ini: dengan cover dozing,
+`dumpsys deviceidle` tetap `ACTIVE`/`INACTIVE`. Saat `ACTION_SCREEN_OFF` dan tidak dicas, `CoverService` memasang alarm
+`ELAPSED_REALTIME_WAKEUP` tidak presisi (tanpa izin exact alarm) 5 menit ke depan; Android menundanya sampai ±9 menit.
+Saat berbunyi: `dumpsys deviceidle force-idle deep`. `ACTION_SCREEN_ON` membatalkan alarm dan, bila sudah dipaksa,
+menjalankan `dumpsys deviceidle unforce; dumpsys deviceidle motion`: `unforce` saja membiarkan HP `IDLE` sampai PIN
+dibuka, karena Doze menilai "layar menyala" dari layar utama yang mati.
+
+Terbukti 2026-11-08: alarm 20:39:31 dan 21:03:22 (8–9 menit setelah cover mati) → `IDLE`; cover menyala 21:14:06 →
+`IDLE to ACTIVE, reason=motion`, 3 s sebelum PIN. Selama Doze dalam, adb nirkabel ke PC bisa putus (`adb connect` ulang
+langsung berhasil). Belum diuji: apakah pesan WhatsApp tetap langsung masuk selama Doze dalam, dan penghematannya dalam
+angka.
+
 ## Batasan yang disengaja
 
-- Tidak ada balas inline (tombol Balas membuka app), tombol untuk notifikasi panggilan, pilihan antar sesi media / seek / sampul album, mirroring,
+- Tidak ada tombol untuk notifikasi panggilan, pilihan antar sesi media / seek / sampul album, mirroring,
   atau keyboard sendiri — lihat [PARITY-OPENCOVER.md](PARITY-OPENCOVER.md).
 - Tanpa Shizuku, membuka app jatuh ke `startActivity` biasa: jalan untuk app di daftar cover MultiStar (diisi saat
   Shizuku terakhir tersambung), app yang dipasang sesudahnya bisa kena "Open your phone to continue".

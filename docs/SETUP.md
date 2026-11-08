@@ -67,7 +67,7 @@ Semua perintah di bawah dijalankan dari komputer. Format keluaran di kolom kanan
 | Listener notifikasi | `adb shell settings get secure enabled_notification_listeners` | mengandung `com.mazwas.coverlauncher/com.mazwas.coverlauncher.feature.launcher.data.NotificationListener` |
 | Daftar cover MultiStar terisi | `adb shell "settings get secure multistar_setting_repository" \| cut -d/ -f26 \| tr ';' '\n' \| wc -l` | ≥ jumlah app di drawer |
 | Notifikasi benar-benar masuk | `adb shell cmd notification list \| head` | ada baris notifikasi aktif |
-| Semua kebutuhan | buka launcher → long-press home → bagian **system** | setiap baris `ok` (Shizuku, notifications, cover service, overlay, do not disturb, fold keeper, sleeps while charging, dan setelan Samsung bila pop-up/AOD kita aktif) |
+| Semua kebutuhan | buka launcher → long-press home → bagian **system** | setiap baris `ok` (Shizuku, notifications, cover service, overlay, microphone, do not disturb, fold keeper, sleeps while charging, dan setelan Samsung bila pop-up/AOD kita aktif) |
 | Cover home ditimpa | tekan Home/Back di cover sampai ke jam Samsung | launcher kembali sendiri |
 | App terbuka di cover | buka app dari dock | muncul di cover, bukan di layar mati |
 | Pop-up Samsung mati (hanya bila Settings → pop-ups: *ours*) | `adb shell "settings get system edge_lighting; settings get secure cover_screen_show_notification"` | `0` dan `0` (pilihan *samsung*: `1` dan `1`) |
@@ -77,6 +77,8 @@ Semua perintah di bawah dijalankan dari komputer. Format keluaran di kolom kanan
 | Pop-up launcher | minta orang lain mengirim pesan (notifikasi tes adb tidak pernah pop-up) | kartu di atas cover ±5 s, tanpa pil/kartu Samsung; saat AOD tidak muncul |
 | Kunci PIN dihormati | matikan lalu bangunkan cover | layar kunci Samsung (`mCurrentFocus=SubScreenLockWindow`), bukan launcher; launcher baru setelah PIN |
 | AOD sendiri (hanya bila Settings → aod: *ours*) | `adb shell "settings get system aod_mode; settings get system aod_tap_to_show_mode"` lalu matikan cover | `1` dan `0`; cover doze menampilkan jam titik launcher |
+| Mikrofon (dikte balasan) | `adb shell "dumpsys package com.mazwas.coverlauncher \| grep RECORD_AUDIO"` | `granted=true` |
+| Deep sleep (hanya bila Settings → deep sleep: *on*) | matikan cover tanpa cas ±10 menit, lalu `adb shell "dumpsys deviceidle \| grep -E 'mState=\|mForceIdle='"` | `mForceIdle=true`, `mState=IDLE`; setelah cover menyala `false` dan bukan `IDLE`. Memanggil adb membangunkan CPU: jangan dipakai untuk menilai jam AOD |
 | Cover mati sendiri | `adb shell settings get global stay_on_while_plugged_in` | `0` (selain 0, cover tidak mati selama dicas) |
 
 Kalau satu baris gagal: tekan **Fix** di Settings → system (menjalankan ulang `Grants.apply()` plus setelan Samsung
@@ -112,6 +114,8 @@ adb shell cmd window user-rotation -d 1 lock 0
 # hanya bila density, font atau animasi pernah diubah
 adb shell "wm density reset -d 1; settings put system font_scale 1.0"
 adb shell "settings put global window_animation_scale 1; settings put global transition_animation_scale 1; settings put global animator_duration_scale 1"
+# hanya bila di-uninstall saat deep sleep sedang memaksa Doze dalam
+adb shell dumpsys deviceidle unforce
 # hanya untuk app yang pernah di-set background: restricted
 adb shell "cmd appops set <paket> RUN_ANY_IN_BACKGROUND allow; am set-standby-bucket <paket> active"
 ```

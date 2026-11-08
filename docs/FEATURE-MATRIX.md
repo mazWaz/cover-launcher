@@ -75,7 +75,7 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 
 | Fitur | OpenCover | Kita |
 |---|---|---|
-| Tile | 15: Wi-Fi, BT, senter, Rotate, sound, DND, saver, location, data, airplane, NFC, dark mode, keep awake, mirror, hotspot | 12: Wi-Fi, BT, data, senter, DND, airplane, sound, location, saver, NFC, dark mode, keep awake (5 tampil, usap bawah = semua) |
+| Tile | 15: Wi-Fi, BT, senter, Rotate, sound, DND, saver, location, data, airplane, NFC, dark mode, keep awake, mirror, hotspot | 13: Wi-Fi, BT, data, senter, DND, airplane, sound, location, saver, NFC, dark mode, keep awake, rotate/locked (5 tampil, usap bawah = semua) |
 | Brightness cover | Slider (`system/sub_screen_brightness`, 1..255, Shizuku) | Ya: slider + AUTO (`…_mode`), lewat Shizuku |
 | Susun tile | Drag & drop, tambah/hapus, urutan disimpan | Tidak |
 | Long-press tile | Halaman/popup sistem | Ya (Wi-Fi, internet, volume, halaman settings) |
@@ -84,7 +84,7 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 
 | Fitur | OpenCover | Kita |
 |---|---|---|
-| Rotasi per app | Ya (`cmd window user-rotation -d 1 lock N` + `fixed-to-user-rotation`) | Tidak |
+| Rotasi per app | Ya (`cmd window user-rotation -d 1 lock N` + `fixed-to-user-rotation`) | Sebagian: hanya terbalik 180° per app (drawer → *upside down*), plus tile rotate dari sensor orientasi |
 | Density per app | Ya (preset 300/260/220/400 dpi) | Tidak |
 | Density/font/animation global | Ya | Tidak |
 | Ukuran/font layar dalam | Untuk mirror saja | Tidak (tidak relevan) |

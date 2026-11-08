@@ -6,13 +6,13 @@ com.mazwas.coverlauncher
 ├── di/AppModule.kt                every binding
 ├── core/
 │   ├── system/                    Shell (Shizuku), Cover (display 1, coverOptions, unlockThen, pullToCover, keepFolded), Clock
-│   ├── designsystem/              NothingTheme (colors, type), components (Label, SegmentedBar, dotGrid, …)
+│   ├── designsystem/              NothingTheme (colors, type), components (Label, SegmentedBar, dotGrid, cutoutSides, …)
 │   ├── presentation/              ObserveAsEvents
 │   └── navigation/                routes + AppNavHost (fades only)
 └── feature/
-    ├── cover/                     CoverService (reopens the launcher when Samsung's cover home shows), CoverPopup (its notification pop-up), Grants (shell setup), ShizukuAutoStart
+    ├── cover/                     CoverService (reopens the launcher when Samsung's cover home shows), CoverPopup (its notification pop-up), CoverRotation (rotate tile, upside-down apps), Grants (shell setup), ShizukuAutoStart
     ├── launcher/
-    │   ├── domain/                LaunchableApp, LauncherNotification, SystemStatus, OpenTarget, LauncherSettings, filterApps, resolveDock, relativeAge, shouldPopUp
+    │   ├── domain/                LaunchableApp, LauncherNotification, SystemStatus, OpenTarget, LauncherSettings, filterApps, resolveDock, relativeAge, shouldPopUp, coverRotation
     │   ├── data/                  AppsSource, IconLoader, SettingsStore, NotificationStore (+ listener), SystemStatusSource (+ toggles, cover brightness), MediaSource, CoverOpener
     │   └── presentation/          LauncherActivity, contract, ViewModel, Root + Screen, HomePage/AppDrawer/NotificationPanel/Wallpaper, Icons, Gestures
     └── settings/presentation/     Settings contract, ViewModel, Root + Screen

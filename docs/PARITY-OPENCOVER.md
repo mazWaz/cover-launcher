@@ -128,10 +128,13 @@ get-allowed-network-types-for-users -s 0` → `No valid subscription found`, jad
    menambah, backup sekali). Terbukti (Shizuku dihentikan): app di daftar terbuka di cover lewat `startActivity`,
    app di luar daftar ditutup Samsung. ~~Approve dialog debugging~~ **selesai dengan cara lain**: dialog asli dipindah ke cover
    dan dijawab pengguna (bukan a11y menekan Allow); belum diuji dengan dialog asli.
-4. **Tile lengkap + reorder** — **sebagian selesai**: NFC, dark mode, keep awake; panel ringkas 5 tile, usap bawah =
-   semua. Hotspot ditunda (tanpa SIM). Belum: rotate, mirror, urutan di `SettingsStore`. ~~Slider brightness~~ **selesai**:
+4. **Tile lengkap + reorder** — **sebagian selesai**: NFC, dark mode, keep awake, rotate/locked (sensor orientasi
+   dibaca sendiri, auto-rotation Android tidak memutar cover); panel ringkas 5 tile, usap bawah = semua. Hotspot ditunda
+   (tanpa SIM). Belum: mirror, urutan di `SettingsStore`. ~~Slider brightness~~ **selesai**:
    `sub_screen_brightness` + mode otomatis (terbukti di HP: mode 0 + nilai 20 meredupkan cover).
 5. **Density/font/rotasi** — `wm density -d 1`, `cmd window user-rotation -d 1 lock N`, disimpan per paket.
+   Rotasi **sebagian selesai**: per paket hanya terbalik 180° (drawer → *upside down*, untuk tombol game di bawah
+   kamera). Belum: 90°/270° per paket, density, font.
 6. **Keep-awake overlay + foreground service + boot receiver** — menutup risiko BAL dan membuat app menyala
    lagi setelah reboot maupun update APK.
 7. **Edge lighting / banking step-aside** — kecil, kerjakan kalau salah satunya mengganggu.

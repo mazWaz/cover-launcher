@@ -23,12 +23,16 @@ Nothing-inspired design: OLED black, monochrome, dot-matrix clock.
   pops up twice. Same rules as Android's heads-up: important notifications only, none that Do Not Disturb holds back.
 - **Quick toggles**: five on top; swipe down in the panel to see all of them with the brightness slider underneath.
   Wi-Fi, Bluetooth, mobile data, torch, Do Not Disturb, airplane mode, sound (ring → vibrate → mute), location,
-  power saver, NFC, dark mode, keep awake (the cover stays on until you turn it off or press the power key).
+  power saver, NFC, dark mode, keep awake (the cover stays on until you turn it off or press the power key),
+  rotate (*rotate*: the cover follows how you hold the phone; *locked*: it stays the way it is turned now).
   Long-press opens the matching system popup (Wi-Fi, internet, volume) or settings page.
 - **Media player** in the panel while something plays: title, artist, previous / play-pause / next (top session).
   Tap the title to open the app; that app's media notification is left out of the list while the player shows.
 - **Cover brightness** slider under the expanded toggles: dragging sets a manual level (auto brightness goes off), **AUTO**
   hands it back to Samsung's adaptive brightness. Needs Shizuku; hidden without it.
+- **Upside-down apps** (drawer → long-press → *upside down*): the cover turns 180° while that app is in front, so the
+  camera sits top left instead of bottom right. Made for games whose buttons land under the camera (Mobile Legends).
+  Screens keep clear of the camera whichever way the cover is turned.
 - **Every app opens on the cover**: apps are started on display 1 through Shizuku, which skips Samsung's
   "Open your phone to continue" screen. Apps that still open on the dead main screen are moved to the cover.
 - **Always the cover home**: whenever Samsung's cover home (clock/widgets) would show, the launcher comes back.
@@ -113,7 +117,7 @@ That's it. Lock and wake the cover: you should land on the launcher.
 | Home | long-press | settings |
 | Home | tap a dock icon | open the app |
 | Drawer | type + keyboard *Go* | open the first match |
-| Drawer | long-press an app | pin/unpin to dock, app info, uninstall |
+| Drawer | long-press an app | pin/unpin to dock, upside down/upright, app info, uninstall |
 | Drawer | pull down at the top / Back | close |
 | Panel | tap a toggle | turn it on/off |
 | Panel | long-press a toggle | system popup / settings page |
@@ -161,6 +165,7 @@ Shizuku has to be running for apps to open on the cover.
 | Cover wakes to Samsung's clock instead of the launcher | Check *Settings → Accessibility → Installed apps → Cover Launcher* is on, or tap **Fix permissions**. |
 | Cover stuck on a half-transparent lock clock right after a One UI update | Samsung's post-update intro is waiting on the (dead) main screen and blocks the cover. Turn the main display on with `adb shell cmd device_state state 3`, finish the intro there (blind taps, or mirrored with [scrcpy](https://github.com/Genymobile/scrcpy) `--display-id 0`), then `adb shell cmd device_state state 0`. |
 | A new computer shows the phone as `unauthorized` | The "Allow USB debugging?" prompt should be on the cover: unlock it and answer. Not there: Shizuku must be running to move it; unplugging the cable dismisses it. |
+| Cover doesn't turn with the phone | The rotate tile must show *rotate* (not *locked*) and Shizuku must be running. Upside-down apps stay upside down whatever the tile says. |
 | Main screen should work again | `adb shell "pkill -f coverlauncher-fold; cmd device_state state reset"` |
 
 ## Uninstall
@@ -171,6 +176,8 @@ adb shell pkill -f coverlauncher-fold    # the fold keeper runs as the shell use
 adb shell cmd device_state state reset   # give the main screen back
 # only if pop-ups were on "ours" when uninstalling: Samsung's cover pop-ups back
 adb shell "settings put system edge_lighting 1; settings put secure cover_screen_show_notification 1"
+# the cover keeps its last rotation: turn it upright
+adb shell cmd window user-rotation -d 1 lock 0
 ```
 
 Switching pop-ups back to *samsung* before uninstalling does the last line for you.

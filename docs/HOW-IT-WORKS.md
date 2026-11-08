@@ -16,6 +16,7 @@ Karena itu tidak perlu root dan tidak perlu MultiStar. Allowlist cover milik Mul
 | `App` | `App.kt` | start Koin; saat binder Shizuku datang: minta izin Shizuku bila belum ada, lalu `Grants.apply()` (juga begitu izin diberikan) |
 | Izin | `feature/cover/Grants.kt` | 6 perubahan sistem: state lipat (+ penjaga), overlay appop, listener notifikasi, DND, accessibility, allowlist cover MultiStar; plus pop-up Samsung, hanya saat pilihan pop-up berubah (§9) |
 | Home takeover | `feature/cover/CoverService.kt` | accessibility service: timpa cover home, tarik app dari layar mati, orkestrasi autostart Shizuku |
+| Rotasi | `feature/cover/CoverRotation.kt` | tile rotate/locked dari sensor orientasi, app terbalik 180° selama di depan (§10) |
 | Pop-up | `feature/cover/CoverPopup.kt` | jendela overlay `CoverService` di display 1: notifikasi baru yang penting, 5 s (§9) |
 | Autostart | `feature/cover/ShizukuAutoStart.kt` | sekali per boot: buka Shizuku dan tekan Start |
 | Shell | `core/system/Shell.kt` | `Shizuku.newProcess` (reflection) → perintah sebagai uid 2000 |
@@ -127,7 +128,7 @@ Clock                                                  LauncherAction → ViewMo
 | `NotificationStore` | `NotificationListenerService` menyimpan `StatusBarNotification` mentah (untuk dibuka/dibatalkan); `FLAG_GROUP_SUMMARY` dan yang tanpa judul+teks dibuang; `popups` = notifikasi yang baru saja lolos `shouldPopUp` (§9) |
 | `SystemStatusSource` | battery, wifi, BT, torch, DND, airplane, data, ringer, location, power saver. Toggle lewat `Shell` (tabel di §8), data lewat `ContentObserver` pada `Settings.Global.mobile_data` |
 | `MediaSource` | `MediaSessionManager.getActiveSessions(listener)` + `OnActiveSessionsChangedListener`, menumpang izin listener notifikasi; mengikuti sesi teratas saja (paket, judul, artis, playing) dan mengirim ⏮ ⏯ ⏭ lewat `transportControls`. Ketuk judul = buka app paket itu lewat jalur app biasa. Selama pemutar tampil, notifikasi ber-`EXTRA_MEDIA_SESSION` dari paket yang sama tidak masuk daftar (`listedNotifications`) |
-| `SettingsStore` | DataStore `launcher`: dock, `IconStyle`, `wallpaperVersion`, `dotFilter`, `popups`; gambar di `filesDir/wallpaper.jpg` |
+| `SettingsStore` | DataStore `launcher`: dock, `IconStyle`, `wallpaperVersion`, `dotFilter`, `popups`, `flipped` (paket terbalik); gambar di `filesDir/wallpaper.jpg` |
 | `IconLoader` | `resolveActivity().getIcon()` → mono (layer monochrome di atas disc, fallback greyscale) atau warna; `LruCache` 256; ikon notifikasi = smallIcon putih |
 | `Clock` | tick tiap batas menit, format 12/24 jam ikut sistem |
 
@@ -138,6 +139,8 @@ Overlay drawer/panel adalah `enum Overlay` di state internal ViewModel, bukan ru
 
 - Kanvas 748×720 px = 352×339 dp, density 320. Cutout kamera di kanan-bawah (`Rect(379,654-748,720)` px):
   semua halaman memakai `WindowInsets.displayCutout` sebagai padding bawah, dan tappable penting dijaga di atas 308 dp.
+  Cutout ikut berputar bersama cover (kanan di 90°, atas di 180°, kiri di 270°): `Modifier.cutoutSides()` memberi
+  jarak di sisi itu pada Home, drawer, panel, Settings dan pop-up.
 - Status bar sistem disembunyikan (`hide(systemBars())`), diganti status row sendiri; bar navigasi tetap milik Samsung
   dengan mode transien.
 - Wallpaper: foto apa adanya, atau halftone dot-matrix di GPU (`RuntimeShader` di `Wallpaper.kt`), lalu scrim 20 % (dot)
@@ -164,6 +167,7 @@ Overlay drawer/panel adalah `enum Overlay` di state internal ViewModel, bukan ru
 | NFC | `cmd nfc enable-nfc` / `cmd nfc disable-nfc persist` (`svc nfc` dibunuh di HP ini, exit 137, juga dari adb); status `NfcAdapter.isEnabled` + `ACTION_ADAPTER_STATE_CHANGED` (izin normal `NFC`) |
 | Dark | `cmd uimode night yes\|no`; status `Configuration.isNightModeActive` saat `ACTION_CONFIGURATION_CHANGED` |
 | Keep awake | Tanpa shell: launcher menulis prefs `keep_awake`, `CoverService` memasang jendela 1×1 `TYPE_ACCESSIBILITY_OVERLAY` di display 1 dengan `FLAG_KEEP_SCREEN_ON`; tombol power tetap mematikan. Terukur (tanpa cas): dengan jendela itu cover tetap `Awake` setelah 40 s diam, tanpa jendela `Dozing` (timeout layar 30 s) |
+| Rotate | Tanpa shell di tile: prefs `rotate_auto` / `rotate_lock`; `CoverRotation` yang memutar cover (§10) |
 | Hotspot | **tidak ada**: HP ini tanpa SIM aktif (tak ada internet untuk dibagi) dan shell hanya bisa membuat hotspot sementara (`cmd wifi start-softap`), bukan hotspot milik pengguna |
 | Brightness cover (slider) | baca: `settings get system sub_screen_brightness` + `…_mode` (kunci tersembunyi Samsung, jadi lewat shell, saat panel dibuka); tulis saat jari dilepas: `settings put system sub_screen_brightness_mode 0; settings put system sub_screen_brightness N` (1..255). Mode otomatis dimatikan dulu: selama otomatis, Samsung terus menulis ulang nilainya. AUTO: `…_mode 1`. |
 
@@ -215,6 +219,35 @@ uji butuh pesan sungguhan. Belum diuji: geser, tombol, ketuk saat cover terkunci
 untuk notifikasi saat kedua setelan Samsung `0`.
 
 Uninstall saat pilihan *ours* membiarkan kedua setelan `0`; kembalikan dengan nilai `1` (lihat [SETUP](SETUP.md) §7).
+
+## 10. Rotasi cover
+
+Semua rotasi dari launcher berupa kunci tetap lewat Shizuku:
+
+```sh
+cmd window fixed-to-user-rotation -d 1 enabled   # permintaan orientasi app diabaikan (app di-letterbox)
+cmd window user-rotation -d 1 lock N             # N = Surface.ROTATION_*: 0, 1 (90°), 2 (180°), 3 (270°)
+```
+
+`coverRotation()` memilih N untuk app yang sedang di depan: app di daftar *upside down* → 2; tile *rotate* → nilai
+sensor; tile *locked* → rotasi saat tile dikunci (`rotate_lock`, dibaca dari `Display.rotation` cover). "App di depan" =
+paket dari event `TYPE_WINDOW_STATE_CHANGED` di display 1 yang class-nya sebuah activity (`getActivityInfo`), jadi
+keyboard, panel Samsung dan pop-up tidak mengubah rotasi. Setelah restart/update, sebelum ada event seperti itu,
+dipakai paket `rootInActiveWindow`. Perintah hanya dikirim kalau N berubah.
+
+**Kenapa bukan auto-rotation Android.** Terukur 2026-11-08: dengan `user-rotation -d 1 free`, sensor melaporkan 0/1/2
+ke system_server saat HP diputar, tapi cover tidak berputar. Listener orientasi cover (`WindowOrientationListener`
+display 1) hanya dinilai ulang saat layar menyala (setelah menyala dalam keadaan terkunci ia tetap mati walau mode
+kembali `free`; `user-rotation`, `fixed-to-user-rotation` dan `accelerometer_rotation` tidak menyalakannya), dan
+180° selalu ditolak (`mAllowAllRotations=false`). Karena itu `CoverRotation` membaca sendiri sensor orientasi Samsung
+("auto_rotation Screen Orientation Sensor", type 27 = `TYPE_DEVICE_ORIENTATION`, on-change, nilai 0..3) selama tile
+*rotate*; nilai sensor dipakai langsung sebagai N (0 = dipegang normal, 2 = terbalik; arah 90° kiri/kanan teruji
+benar di HP). Saat mulai mendengar, titik awalnya rotasi cover sekarang, supaya tidak berkedip ke 0.
+
+**App terbalik.** Untuk Mobile Legends: game menggambar sampai area kamera (`layoutInDisplayCutoutMode=always`) dan
+tidak bisa diubah ukurannya (`RESIZE_MODE_UNRESIZEABLE`), jadi tombol skill di kanan bawah jatuh di bawah kamera.
+Diputar 180°, kamera ada di kiri atas (menutup separuh atas minimap dan ikon ⚙). Yang dicoba dan tidak menolong:
+`useLetterbox` di `multistar_setting_json_repository` (jendela tetap 748×720), override compat Android untuk cutout.
 
 ## Batasan yang disengaja
 

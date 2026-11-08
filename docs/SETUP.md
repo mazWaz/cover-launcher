@@ -72,6 +72,7 @@ Semua perintah di bawah dijalankan dari komputer. Format keluaran di kolom kanan
 | Cover home ditimpa | tekan Home/Back di cover sampai ke jam Samsung | launcher kembali sendiri |
 | App terbuka di cover | buka app dari dock | muncul di cover, bukan di layar mati |
 | Pop-up Samsung mati (hanya bila Settings → pop-ups: *ours*) | `adb shell "settings get system edge_lighting; settings get secure cover_screen_show_notification"` | `0` dan `0` (pilihan *samsung*: `1` dan `1`) |
+| Rotasi cover | `adb shell "cmd window fixed-to-user-rotation -d 1; cmd window user-rotation -d 1"` | `enabled` lalu `lock N`; app *upside down* di depan → `lock 2` |
 | Pop-up launcher | minta orang lain mengirim pesan (notifikasi tes adb tidak pernah pop-up) | kartu di atas cover ±5 s, tanpa pil/kartu Samsung |
 
 Kalau satu baris gagal: jalankan **Fix permissions** di Settings launcher (menjalankan ulang `Grants.apply()`),
@@ -101,6 +102,8 @@ adb shell cmd device_state state reset      # kembalikan layar utama
 adb shell 'settings put secure multistar_setting_repository "$(cat /data/local/tmp/coverlauncher-multistar.bak)"'
 # hanya bila pop-ups masih "ours" saat uninstall: pop-up Samsung di cover kembali (1 = default One UI)
 adb shell "settings put system edge_lighting 1; settings put secure cover_screen_show_notification 1"
+# cover tetap di rotasi terakhir: tegakkan
+adb shell cmd window user-rotation -d 1 lock 0
 ```
 
 Memilih pop-ups *samsung* di Settings sebelum uninstall sudah melakukan baris terakhir.

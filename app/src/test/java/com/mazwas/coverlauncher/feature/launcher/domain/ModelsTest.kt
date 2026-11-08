@@ -52,6 +52,16 @@ class ModelsTest {
     assertEquals(false, shouldPopUp(Notification.FLAG_ONGOING_EVENT, high, isUpdate = false, passesDnd = true))
   }
 
+  @Test fun `pop-up over a secure lock follows the lock-screen notification rules`() {
+    val private = Notification.VISIBILITY_PRIVATE
+    assertEquals(LockedView.Full, lockedView(secureLocked = false, showOnLock = false, showPrivate = false, private))
+    assertEquals(LockedView.Full, lockedView(secureLocked = true, showOnLock = true, showPrivate = true, private))
+    assertEquals(LockedView.Public, lockedView(secureLocked = true, showOnLock = true, showPrivate = false, private))
+    assertEquals(LockedView.Full, lockedView(true, true, false, Notification.VISIBILITY_PUBLIC))
+    assertEquals(LockedView.Hidden, lockedView(true, true, true, Notification.VISIBILITY_SECRET))
+    assertEquals(LockedView.Hidden, lockedView(true, showOnLock = false, showPrivate = true, Notification.VISIBILITY_PUBLIC))
+  }
+
   @Test fun `flipped apps turn the cover upside down, others follow the rotate tile`() {
     val flipped = setOf("com.mobile.legends")
     assertEquals(2, coverRotation("com.mobile.legends", flipped, auto = true, lockedAt = 1, sensed = 3))

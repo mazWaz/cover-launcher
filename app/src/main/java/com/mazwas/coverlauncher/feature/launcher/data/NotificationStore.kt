@@ -1,10 +1,16 @@
 package com.mazwas.coverlauncher.feature.launcher.data
 
+import android.app.KeyguardManager
 import android.app.Notification
 import android.content.Context
+import android.provider.Settings
+import android.util.Log
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import com.mazwas.coverlauncher.core.system.TAG
 import com.mazwas.coverlauncher.feature.launcher.domain.LauncherNotification
+import com.mazwas.coverlauncher.feature.launcher.domain.LockedView
+import com.mazwas.coverlauncher.feature.launcher.domain.lockedView
 import com.mazwas.coverlauncher.feature.launcher.domain.notificationActions
 import com.mazwas.coverlauncher.feature.launcher.domain.shouldPopUp
 import kotlinx.coroutines.Dispatchers
@@ -57,8 +63,37 @@ class NotificationStore(private val context: Context) {
     publish()
     if (sbn.packageName != context.packageName &&
       shouldPopUp(sbn.notification.flags, ranking.importance, isUpdate, ranking.matchesInterruptionFilter())
-    ) sbn.toDomain()?.let(_popups::tryEmit)
+    ) sbn.forLockScreen(ranking)?.let(_popups::tryEmit)
   }
+
+  /** The pop-up's version of it: whole, its public version, or none, as the lock screen would show it ([lockedView]). */
+  private fun StatusBarNotification.forLockScreen(ranking: NotificationListenerService.Ranking): LauncherNotification? {
+    val full = toDomain() ?: return null
+    val keyguard = context.getSystemService(KeyguardManager::class.java)
+    val channel = ranking.channel?.lockscreenVisibility?.takeIf { it != NotificationListenerService.Ranking.VISIBILITY_NO_OVERRIDE }
+    val view = lockedView(
+      secureLocked = keyguard.isKeyguardLocked && keyguard.isDeviceSecure,
+      showOnLock = secureSetting("lock_screen_show_notifications", unreadable = true),
+      showPrivate = secureSetting("lock_screen_allow_private_notifications", unreadable = false),
+      visibility = channel ?: notification.visibility,
+    )
+    return when (view) {
+      LockedView.Full -> full
+      LockedView.Hidden -> null
+      LockedView.Public -> {
+        val public = notification.publicVersion?.extras
+        val title = public?.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+        val text = public?.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
+        full.copy(title = title, text = text.ifBlank { if (title.isBlank()) "contents hidden" else "" }, actions = emptyList())
+      }
+    }
+  }
+
+  // Hidden Settings.Secure keys Android's own lock screen reads (1 = on). Unreadable: pop up, but without private content.
+  private fun secureSetting(key: String, unreadable: Boolean): Boolean =
+    runCatching { Settings.Secure.getInt(context.contentResolver, key, 1) == 1 }
+      .onFailure { Log.w(TAG, "can't read $key", it) }
+      .getOrDefault(unreadable)
 
   private fun StatusBarNotification.toDomain(): LauncherNotification? {
     val n = notification

@@ -24,6 +24,7 @@ data class SettingsState(
   val dotFilter: Boolean = true,
   val iconStyle: IconStyle = IconStyle.Mono,
   val popups: Boolean = false,
+  val aod: Boolean = false,
   val importing: Boolean = false,
   val shizuku: Boolean = false,
   val notificationAccess: Boolean = false,
@@ -37,6 +38,7 @@ sealed interface SettingsAction {
   data class SetDotFilter(val on: Boolean) : SettingsAction
   data class SetIconStyle(val style: IconStyle) : SettingsAction
   data class SetPopups(val on: Boolean) : SettingsAction
+  data class SetAod(val on: Boolean) : SettingsAction
   data object FixPermissions : SettingsAction
   data object Refresh : SettingsAction
   data object Back : SettingsAction
@@ -59,7 +61,7 @@ class SettingsViewModel(
   val events = eventChannel.receiveAsFlow()
 
   val state: StateFlow<SettingsState> = combine(settings.settings, notifications.connected, local) { s, access, l ->
-    SettingsState(s.wallpaperVersion != 0L, s.dotFilter, s.iconStyle, s.popups, l.importing, l.shizuku, access, l.coverService)
+    SettingsState(s.wallpaperVersion != 0L, s.dotFilter, s.iconStyle, s.popups, s.aod, l.importing, l.shizuku, access, l.coverService)
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsState())
 
   fun onAction(action: SettingsAction) {
@@ -78,6 +80,7 @@ class SettingsViewModel(
         grants.samsungPopups(!action.on)
         settings.setPopups(action.on)
       }
+      is SettingsAction.SetAod -> viewModelScope.launch { settings.setAod(action.on) }
       SettingsAction.FixPermissions -> viewModelScope.launch {
         grants.apply()
         delay(1_000) // the shell commands run on their own threads; re-read once they've had time to land

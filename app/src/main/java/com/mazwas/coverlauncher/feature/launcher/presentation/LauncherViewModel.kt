@@ -29,7 +29,6 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.time.format.DateTimeFormatter
 
 class LauncherViewModel(
   apps: AppsSource,
@@ -52,8 +51,8 @@ class LauncherViewModel(
     val (status, notes, access, playing) = alert
     val shown = filterApps(all, u.query)
     LauncherState(
-      time = now.format(if (clock.is24Hour()) H24 else H12),
-      date = now.format(DATE).uppercase(),
+      time = clock.time(now),
+      date = clock.date(now),
       now = System.currentTimeMillis(),
       status = status,
       dock = resolveDock(s.dock, all),
@@ -127,11 +126,5 @@ class LauncherViewModel(
 
   private fun send(event: LauncherEvent) {
     viewModelScope.launch { eventChannel.send(event) }
-  }
-
-  private companion object {
-    val H24: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-    val H12: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm")
-    val DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE dd MMM")
   }
 }

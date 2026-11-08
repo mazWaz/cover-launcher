@@ -64,7 +64,7 @@ fun HomePage(state: LauncherState, onAction: (LauncherAction) -> Unit, modifier:
 }
 
 @Composable
-private fun Clock(time: String) {
+internal fun Clock(time: String) {
   val style = MaterialTheme.typography.displayLarge
   val color = MaterialTheme.colorScheme.primary
   val parts = time.split(':', limit = 2)
@@ -81,7 +81,7 @@ private fun Clock(time: String) {
 }
 
 @Composable
-private fun StatusRow(state: LauncherState) {
+internal fun StatusRow(state: LauncherState) {
   val status = state.status
   Row(Modifier.fillMaxWidth().height(20.dp), verticalAlignment = Alignment.CenterVertically) {
     // one icon per app with alerts
@@ -109,7 +109,7 @@ private fun StatusGlyph(icon: Int) = Icon(
 )
 
 @Composable
-private fun DateRow(state: LauncherState) {
+internal fun DateRow(state: LauncherState) {
   Row(verticalAlignment = Alignment.CenterVertically) {
     Label(state.date, color = MaterialTheme.colorScheme.onSurface)
     val count = state.notifications.size

@@ -118,6 +118,21 @@ fun parseCoverBrightness(out: String?): CoverBrightness? {
   return CoverBrightness(level.coerceIn(1, 255), auto = lines.getOrNull(1) == "1")
 }
 
+/** How much of a notification the pop-up may show. */
+enum class LockedView { Full, Public, Hidden }
+
+/**
+ * Android's lock-screen rules, for the pop-up over a PIN/pattern/password lock: nothing when notifications are off on the
+ * lock screen or the notification is secret; its public version when it is private and the user hides private content.
+ * [visibility] is the channel's lock-screen visibility if it sets one, else the notification's.
+ */
+fun lockedView(secureLocked: Boolean, showOnLock: Boolean, showPrivate: Boolean, visibility: Int): LockedView = when {
+  !secureLocked -> LockedView.Full
+  !showOnLock || visibility == Notification.VISIBILITY_SECRET -> LockedView.Hidden
+  visibility == Notification.VISIBILITY_PRIVATE && !showPrivate -> LockedView.Public
+  else -> LockedView.Full
+}
+
 /** Quick settings tiles in panel order; the collapsed panel shows the first five. */
 enum class QuickToggle { Wifi, Bluetooth, Data, Torch, Dnd, Airplane, Sound, Location, Saver, Nfc, Dark, KeepAwake, Rotate }
 
@@ -151,6 +166,7 @@ data class LauncherSettings(
   val dotFilter: Boolean = true,
   val popups: Boolean = false, // our cover pop-up instead of Samsung's
   val flipped: Set<String> = emptySet(), // packages shown upside down while in front (see coverRotation)
+  val aod: Boolean = false, // our AOD over Samsung's while the cover dozes
 )
 
 const val DOCK_SIZE = 4

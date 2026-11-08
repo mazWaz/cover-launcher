@@ -107,6 +107,10 @@ fun SettingsScreen(state: SettingsState, onAction: (SettingsAction) -> Unit) {
     Setting("icons") {
       SegmentedControl(listOf(IconStyle.Mono to "mono", IconStyle.Color to "color"), state.iconStyle, { onAction(SettingsAction.SetIconStyle(it)) })
     }
+    // drawn over Samsung's AOD, which has to stay on
+    Setting("aod") {
+      SegmentedControl(listOf(true to "ours", false to "samsung"), state.aod, { onAction(SettingsAction.SetAod(it)) })
+    }
     Section("alerts")
     // ours replaces Samsung's, which only Shizuku can switch off
     Setting("pop-ups") {

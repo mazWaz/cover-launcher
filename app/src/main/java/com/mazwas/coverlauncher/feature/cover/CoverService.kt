@@ -10,6 +10,7 @@ import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
@@ -54,6 +55,7 @@ class CoverService : AccessibilityService() {
   private val settings: SettingsStore by inject()
   private val popup by lazy { CoverPopup(this, get(), notifications, get()) }
   private val rotation by lazy { CoverRotation(this) { rootInActiveWindow?.packageName } }
+  private val aod by lazy { CoverAod(this, get(), get(), get(), notifications) }
   private val scope = MainScope()
 
   // Shizuku hands out its binder only when our uid starts; its "send to every client" at server start misses us on
@@ -62,20 +64,32 @@ class CoverService : AccessibilityService() {
   // ponytail: also restarts on every screen-off while Shizuku isn't running at all; cheap, cover is off.
   private val screenOff = object : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+      scope.launch { if (settings.settings.first().aod) aod.show() }
       if (Shizuku.pingBinder()) return
       Log.i(TAG, "no Shizuku binder -> restarting")
       Process.killProcess(Process.myPid())
     }
   }
 
+  private val screenOn = object : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) = aod.hide()
+  }
+
   override fun onServiceConnected() {
     connected = true
     registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF))
+    registerReceiver(screenOn, IntentFilter(Intent.ACTION_SCREEN_ON))
     coverPrefs().registerOnSharedPreferenceChangeListener(tilesChanged)
     holdCoverOn()
     // boot / reinstall left no launcher task: create it now so the cover wakes to it (it shows over the lock screen)
     showLauncher()
-    scope.launch { notifications.popups.collect { if (settings.settings.first().popups) popup.show(it) } }
+    // Not over the AOD: a dozing cover takes no swipes, and the AOD already shows the new alert (icon and count) without
+    // its text (seen 2026-11-08: name and message stuck on the dozing cover)
+    scope.launch {
+      notifications.popups.collect {
+        if (settings.settings.first().popups && getSystemService(PowerManager::class.java).isInteractive) popup.show(it)
+      }
+    }
     scope.launch { settings.settings.collect { rotation.flipped = it.flipped } }
   }
 
@@ -83,7 +97,9 @@ class CoverService : AccessibilityService() {
     connected = false
     scope.cancel()
     popup.hide()
+    aod.hide()
     unregisterReceiver(screenOff)
+    unregisterReceiver(screenOn)
     rotation.stop()
     coverPrefs().unregisterOnSharedPreferenceChangeListener(tilesChanged)
     releaseCover()

@@ -1,5 +1,6 @@
 package com.mazwas.coverlauncher.feature.launcher.presentation
 
+import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -28,7 +29,6 @@ class LauncherActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    setShowWhenLocked(true) // opened the moment the cover wakes, still locked
     enableEdgeToEdge()
     WindowCompat.getInsetsController(window, window.decorView).apply {
       systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -42,6 +42,13 @@ class LauncherActivity : ComponentActivity() {
       }
     }
     if (savedInstanceState == null) openFromPopup(intent)
+  }
+
+  override fun onStart() {
+    super.onStart()
+    // Swipe-only lock: show over it the moment the cover wakes. With a PIN, pattern or password the launcher would put
+    // alerts and toggles in front of it (seen 2026-11-08): leave the lock to Samsung, CoverService brings us back after.
+    setShowWhenLocked(!getSystemService(KeyguardManager::class.java).isDeviceSecure)
   }
 
   override fun onResume() {

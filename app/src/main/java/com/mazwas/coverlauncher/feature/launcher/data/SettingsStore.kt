@@ -28,6 +28,7 @@ class SettingsStore(private val context: Context) {
   private val dotsKey = booleanPreferencesKey("dots")
   private val popupsKey = booleanPreferencesKey("popups")
   private val flippedKey = stringSetPreferencesKey("flipped")
+  private val aodKey = booleanPreferencesKey("aod")
 
   val wallpaperFile = File(context.filesDir, "wallpaper.jpg")
 
@@ -39,6 +40,7 @@ class SettingsStore(private val context: Context) {
       dotFilter = p[dotsKey] ?: true,
       popups = p[popupsKey] ?: false,
       flipped = p[flippedKey].orEmpty(),
+      aod = p[aodKey] ?: false,
     )
   }
 
@@ -46,6 +48,7 @@ class SettingsStore(private val context: Context) {
   suspend fun setIconStyle(style: IconStyle) = context.dataStore.edit { it[iconsKey] = style.name }
   suspend fun setDotFilter(on: Boolean) = context.dataStore.edit { it[dotsKey] = on }
   suspend fun setPopups(on: Boolean) = context.dataStore.edit { it[popupsKey] = on }
+  suspend fun setAod(on: Boolean) = context.dataStore.edit { it[aodKey] = on }
   suspend fun setFlipped(pkg: String, on: Boolean) = context.dataStore.edit {
     val now = it[flippedKey].orEmpty()
     it[flippedKey] = if (on) now + pkg else now - pkg

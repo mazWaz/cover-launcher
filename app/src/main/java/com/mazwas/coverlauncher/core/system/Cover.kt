@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.ActivityOptions
 import android.app.KeyguardManager
 import android.os.Bundle
+import kotlin.concurrent.thread
 
 const val TAG = "CoverLauncher"
 
@@ -47,3 +48,22 @@ private val PULL_TO_COVER = """
  * Moves anything showing there to the cover.
  */
 fun pullToCover() = Shell.exec("sh", "-c", PULL_TO_COVER)
+
+// Folding the phone back cancels the CLOSED override (seen 2026-11-08: it survives opening, not closing), so the next
+// unfold would wake the dead main screen. Re-request it on every hinge change. Our own request logs
+// requestStateInternal, never onStateChanged, so the keeper can't trigger itself; the 1 s lets the old hold drop first.
+private val KEEP_FOLDED = """
+  nohup sh -c 'logcat -T 1 -s DeviceStateManagerService:D | while read -r l; do
+    case "${'$'}l" in *onStateChanged*) sleep 1; cmd device_state state 0 ;; esac
+  done' coverlauncher-fold >/dev/null 2>&1 &
+""".trimIndent()
+
+/**
+ * Starts the fold keeper (process name `coverlauncher-fold`), replacing any earlier one. Shell user only: never run it
+ * as the app, or a later `pkill` from the shell couldn't stop it (OpenCover leaked watchers that way).
+ */
+fun keepFolded() = thread {
+  // Brackets keep the patterns off their own command line. The old logcat goes too: its sh only exits once it does.
+  Shell.exec("sh", "-c", "pkill -f '[c]overlauncher-fold'; pkill -f '[l]ogcat -T 1 -s DeviceStateManagerService:D'").join()
+  Shell.exec("sh", "-c", KEEP_FOLDED)
+}

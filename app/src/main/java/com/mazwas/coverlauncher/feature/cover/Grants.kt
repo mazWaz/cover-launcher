@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.provider.Settings
 import com.mazwas.coverlauncher.core.system.Shell
+import com.mazwas.coverlauncher.core.system.keepFolded
 import com.mazwas.coverlauncher.feature.launcher.data.NotificationListener
 
 /** Everything the launcher needs from the shell user. Idempotent; re-run whenever Shizuku comes up (e.g. after a reboot). */
@@ -11,8 +12,10 @@ class Grants(private val context: Context) {
   fun apply() {
     if (!Shell.ready()) return
     val pkg = context.packageName
-    // main screen is broken: force the folded state so only the cover is used. Undo: `cmd device_state state reset`
+    // main screen is broken: force the folded state so only the cover is used, and keep it across folds.
+    // Undo: `pkill -f coverlauncher-fold; cmd device_state state reset`
     Shell.exec("cmd", "device_state", "state", "0")
+    keepFolded()
     // lets CoverService start the launcher from the background
     Shell.exec("appops", "set", pkg, "SYSTEM_ALERT_WINDOW", "allow")
     Shell.exec("cmd", "notification", "allow_listener", ComponentName(context, NotificationListener::class.java).flattenToString())

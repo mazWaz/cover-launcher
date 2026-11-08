@@ -21,6 +21,8 @@ Nothing-inspired design: OLED black, monochrome, dot-matrix clock.
 - **Quick toggles** (swipe sideways for page 2): Wi-Fi, Bluetooth, mobile data, torch, Do Not Disturb,
   airplane mode, sound (ring → vibrate → mute), location, power saver.
   Long-press opens the matching system popup (Wi-Fi, internet, volume) or settings page.
+- **Cover brightness** slider under the toggles: dragging sets a manual level (auto brightness goes off), **AUTO**
+  hands it back to Samsung's adaptive brightness. Needs Shizuku; hidden without it.
 - **Every app opens on the cover**: apps are started on display 1 through Shizuku, which skips Samsung's
   "Open your phone to continue" screen. Apps that still open on the dead main screen are moved to the cover.
 - **Always the cover home**: whenever Samsung's cover home (clock/widgets) would show, the launcher comes back.
@@ -105,6 +107,7 @@ That's it. Lock and wake the cover: you should land on the launcher.
 | Panel | tap a toggle | turn it on/off |
 | Panel | long-press a toggle | system popup / settings page |
 | Panel | swipe the toggle row sideways | more toggles |
+| Panel | drag the brightness slider / tap AUTO | manual cover brightness / back to auto |
 | Panel | swipe a notification sideways | dismiss it |
 | Panel | tap a notification's button | run it (Reply opens the app) |
 | Panel | swipe up / Back | close |

@@ -76,7 +76,7 @@ Terverifikasi di HP target (`adb`, 2026-11-08):
 | Fitur | OpenCover | Kita |
 |---|---|---|
 | Tile | 15: Wi-Fi, BT, senter, Rotate, sound, DND, saver, location, data, airplane, NFC, dark mode, keep awake, mirror, hotspot | 9: Wi-Fi, BT, data, senter, DND, airplane, sound, location, saver |
-| Brightness cover | Slider (`system/sub_screen_brightness`, 1..255, Shizuku) | Tidak |
+| Brightness cover | Slider (`system/sub_screen_brightness`, 1..255, Shizuku) | Ya: slider + AUTO (`…_mode`), lewat Shizuku |
 | Susun tile | Drag & drop, tambah/hapus, urutan disimpan | Tidak |
 | Long-press tile | Halaman/popup sistem | Ya (Wi-Fi, internet, volume, halaman settings) |
 

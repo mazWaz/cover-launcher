@@ -148,10 +148,11 @@ Overlay drawer/panel adalah `enum Overlay` di state internal ViewModel, bukan ru
 | Power saver | `cmd power set-mode 1\|0` |
 | Torch | `CameraManager.setTorchMode` (tanpa shell) |
 | Sound | `AudioManager.ringerMode`; Silent butuh izin DND |
+| Brightness cover (slider) | baca: `settings get system sub_screen_brightness` + `…_mode` (kunci tersembunyi Samsung, jadi lewat shell, saat panel dibuka); tulis saat jari dilepas: `settings put system sub_screen_brightness_mode 0; settings put system sub_screen_brightness N` (1..255). Mode otomatis dimatikan dulu: selama otomatis, Samsung terus menulis ulang nilainya. AUTO: `…_mode 1`. |
 
 ## Batasan yang disengaja
 
-- Tidak ada balas inline (tombol Balas membuka app), tombol untuk notifikasi panggilan, media player, slider brightness, rotasi/density per app, mirroring,
+- Tidak ada balas inline (tombol Balas membuka app), tombol untuk notifikasi panggilan, media player, rotasi/density per app, mirroring,
   atau keyboard sendiri — lihat [PARITY-OPENCOVER.md](PARITY-OPENCOVER.md).
 - Membuka app **butuh** Shizuku; tanpa itu jatuh ke `startActivity` biasa dan Samsung bisa menampilkan
   "Open your phone to continue".

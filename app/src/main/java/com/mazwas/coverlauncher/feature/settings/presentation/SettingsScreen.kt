@@ -109,7 +109,8 @@ fun SettingsScreen(state: SettingsState, onAction: (SettingsAction) -> Unit) {
     Section("system")
     Setting("shizuku") { StatusDot(state.shizuku, if (state.shizuku) "ready" else "off") }
     Setting("notifications") { StatusDot(state.notificationAccess, if (state.notificationAccess) "on" else "off") }
-    if (!state.shizuku || !state.notificationAccess) {
+    Setting("cover service") { StatusDot(state.coverService, if (state.coverService) "on" else "off") }
+    if (!state.shizuku || !state.notificationAccess || !state.coverService) {
       Spacer(Modifier.height(8.dp))
       PillButton("fix permissions", onClick = { onAction(SettingsAction.FixPermissions) })
     }
@@ -146,5 +147,5 @@ private fun StatusDot(ok: Boolean, text: String) {
 @Preview(widthDp = 352, heightDp = 339, backgroundColor = 0xFF000000, showBackground = true)
 @Composable
 private fun SettingsPreview() = NothingTheme {
-  SettingsScreen(SettingsState(hasWallpaper = true, shizuku = true, notificationAccess = false)) {}
+  SettingsScreen(SettingsState(hasWallpaper = true, shizuku = true, notificationAccess = false, coverService = true)) {}
 }

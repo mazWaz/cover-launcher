@@ -31,6 +31,13 @@ class ModelsTest {
     assertEquals(listOf(true, true, false), SoundMode.entries.map { SystemStatus(sound = it).isOn(QuickToggle.Sound) })
   }
 
+  @Test fun `notification buttons are the first three, none for calls`() {
+    val titles = listOf("Reply", "Mark as read", "Mute", "Archive")
+    assertEquals(listOf("Reply", "Mark as read", "Mute"), notificationActions("msg", titles))
+    assertEquals(titles.take(3), notificationActions(null, titles))
+    assertEquals(emptyList<String>(), notificationActions("call", listOf("Decline", "Answer")))
+  }
+
   @Test fun `notification age rounds down to the largest unit`() {
     val now = 10L * 24 * 3_600_000
     assertEquals(listOf("NOW", "NOW", "5M", "3H", "2D"), listOf(now + 1_000, now - 59_000, now - 300_000, now - 3 * 3_600_000 - 1, now - 2 * 86_400_000L).map { relativeAge(it, now) })

@@ -12,7 +12,15 @@ data class LauncherNotification(
   val text: String,
   val postedAt: Long,
   val clearable: Boolean,
+  val actions: List<String> = emptyList(), // button titles; the index is the app's own action index
 )
+
+/**
+ * Up to three of a notification's buttons. None for calls: on this phone no WhatsApp call answered from another app's
+ * listener (OpenCover) ever went active, so tapping the call opens the app's own call screen instead.
+ */
+fun notificationActions(category: String?, titles: List<String>): List<String> =
+  if (category == "call") emptyList() else titles.take(3)
 
 enum class SoundMode {
   Ring, Vibrate, Silent;
@@ -56,6 +64,7 @@ sealed interface OpenTarget {
   data class Info(val packageName: String) : OpenTarget
   data class Uninstall(val packageName: String) : OpenTarget
   data class Notification(val key: String) : OpenTarget
+  data class NotificationAction(val key: String, val index: Int) : OpenTarget
   /** A quick tile's long-press: its system popup or settings page. */
   data class Settings(val toggle: QuickToggle) : OpenTarget
 }

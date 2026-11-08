@@ -40,6 +40,7 @@ sealed interface LauncherAction {
   data class AppInfo(val app: LaunchableApp) : LauncherAction
   data class Uninstall(val app: LaunchableApp) : LauncherAction
   data class OpenNotification(val key: String) : LauncherAction
+  data class NotificationAction(val key: String, val index: Int) : LauncherAction
   data class Dismiss(val key: String) : LauncherAction
   data object ClearAll : LauncherAction
   data class Toggle(val toggle: QuickToggle) : LauncherAction

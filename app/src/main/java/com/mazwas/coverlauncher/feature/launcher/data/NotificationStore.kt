@@ -5,6 +5,7 @@ import android.content.Context
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.mazwas.coverlauncher.feature.launcher.domain.LauncherNotification
+import com.mazwas.coverlauncher.feature.launcher.domain.notificationActions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,7 +51,8 @@ class NotificationStore(private val context: Context) {
     val text = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: extras.getCharSequence(Notification.EXTRA_TEXT))
       ?.toString().orEmpty()
     if (title.isBlank() && text.isBlank()) return null
-    return LauncherNotification(key, packageName, label(packageName), title, text, postTime, isClearable)
+    val actions = notificationActions(n.category, n.actions.orEmpty().map { it.title?.toString().orEmpty() })
+    return LauncherNotification(key, packageName, label(packageName), title, text, postTime, isClearable, actions)
   }
 
   private fun label(pkg: String): String = labels.getOrPut(pkg) {
@@ -59,7 +61,7 @@ class NotificationStore(private val context: Context) {
   }
 }
 
-/** Enabled with `cmd notification allow_listener` (App.kt does it through Shizuku). */
+/** Enabled with `cmd notification allow_listener` (Grants does it through Shizuku). */
 class NotificationListener : NotificationListenerService() {
   private val store: NotificationStore by inject()
 

@@ -9,6 +9,7 @@ import com.mazwas.coverlauncher.feature.launcher.data.NotificationStore
 import com.mazwas.coverlauncher.feature.launcher.data.SettingsStore
 import com.mazwas.coverlauncher.feature.launcher.domain.IconStyle
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +26,7 @@ data class SettingsState(
   val importing: Boolean = false,
   val shizuku: Boolean = false,
   val notificationAccess: Boolean = false,
+  val coverService: Boolean = false,
 )
 
 sealed interface SettingsAction {
@@ -48,14 +50,14 @@ class SettingsViewModel(
   notifications: NotificationStore,
   private val grants: Grants,
 ) : ViewModel() {
-  private data class Local(val importing: Boolean = false, val shizuku: Boolean = Shell.ready())
+  private data class Local(val importing: Boolean = false, val shizuku: Boolean, val coverService: Boolean)
 
-  private val local = MutableStateFlow(Local())
+  private val local = MutableStateFlow(Local(shizuku = Shell.ready(), coverService = grants.coverServiceEnabled()))
   private val eventChannel = Channel<SettingsEvent>()
   val events = eventChannel.receiveAsFlow()
 
   val state: StateFlow<SettingsState> = combine(settings.settings, notifications.connected, local) { s, access, l ->
-    SettingsState(s.wallpaperVersion != 0L, s.dotFilter, s.iconStyle, l.importing, l.shizuku, access)
+    SettingsState(s.wallpaperVersion != 0L, s.dotFilter, s.iconStyle, l.importing, l.shizuku, access, l.coverService)
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsState())
 
   fun onAction(action: SettingsAction) {
@@ -69,8 +71,12 @@ class SettingsViewModel(
       SettingsAction.ResetWallpaper -> viewModelScope.launch { settings.resetWallpaper() }
       is SettingsAction.SetDotFilter -> viewModelScope.launch { settings.setDotFilter(action.on) }
       is SettingsAction.SetIconStyle -> viewModelScope.launch { settings.setIconStyle(action.style) }
-      SettingsAction.FixPermissions -> grants.apply()
-      SettingsAction.Refresh -> local.update { it.copy(shizuku = Shell.ready()) }
+      SettingsAction.FixPermissions -> viewModelScope.launch {
+        grants.apply()
+        delay(1_000) // the shell commands run on their own threads; re-read once they've had time to land
+        onAction(SettingsAction.Refresh)
+      }
+      SettingsAction.Refresh -> local.update { it.copy(shizuku = Shell.ready(), coverService = grants.coverServiceEnabled()) }
       SettingsAction.Back -> send(SettingsEvent.NavigateBack)
     }
   }

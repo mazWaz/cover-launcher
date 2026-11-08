@@ -19,14 +19,20 @@ class Grants(private val context: Context) {
     // the sound tile's silent mode
     Shell.exec("cmd", "notification", "allow_dnd", pkg)
 
-    val service = ComponentName(context, CoverService::class.java).flattenToString()
-    val enabled = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-      .orEmpty().split(':').filter { it.isNotEmpty() }
-    if (service !in enabled) {
+    if (!coverServiceEnabled()) {
       // keep other apps' services, drop our own old component names
-      val next = enabled.filterNot { it.startsWith("$pkg/") } + service
+      val next = enabledServices().filterNot { it.startsWith("$pkg/") } + coverService
       Shell.exec("settings", "put", "secure", Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, next.joinToString(":"))
       Shell.exec("settings", "put", "secure", Settings.Secure.ACCESSIBILITY_ENABLED, "1")
     }
   }
+
+  /** Whether CoverService (the part that keeps the launcher the cover home) is switched on. */
+  fun coverServiceEnabled(): Boolean = coverService in enabledServices()
+
+  private val coverService = ComponentName(context, CoverService::class.java).flattenToString()
+
+  private fun enabledServices() =
+    Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+      .orEmpty().split(':').filter { it.isNotEmpty() }
 }

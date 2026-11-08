@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -172,6 +173,14 @@ private fun NotificationRow(note: LauncherNotification, now: Long, onAction: (La
             note.text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2, overflow = TextOverflow.Ellipsis,
           )
+        }
+        if (note.actions.isNotEmpty()) {
+          FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            note.actions.forEachIndexed { i, title ->
+              // icon-only buttons have no title: skip them, the index still points at the app's own action
+              if (title.isNotBlank()) PillButton(title, onClick = { onAction(LauncherAction.NotificationAction(note.key, i)) })
+            }
+          }
         }
       }
     }

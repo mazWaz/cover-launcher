@@ -119,7 +119,8 @@ class CoverService : AccessibilityService() {
   }
 
   // Resource ids are obfuscated, so by text. Two "Start" buttons (wireless debugging, root): take the wireless card's.
-  // ponytail: English texts (Shizuku has no Indonesian strings today); a translation makes this miss, then it's manual.
+  // shortcut: English texts only. Shizuku 13.6 ships translations (id: "Mulai melalui Debug Nirkabel" / "Mulai"), so a
+  // non-English system language makes this miss and Start is manual; match the translated texts if that happens.
   private fun shizukuStartButton(): AccessibilityNodeInfo? {
     val root = rootInActiveWindow?.takeIf { it.packageName == ShizukuAutoStart.PACKAGE } ?: return null
     var card = root.findAccessibilityNodeInfosByText("Wireless debugging").firstOrNull()

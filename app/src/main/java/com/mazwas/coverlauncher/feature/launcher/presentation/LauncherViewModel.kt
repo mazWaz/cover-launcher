@@ -73,6 +73,7 @@ class LauncherViewModel(
       is LauncherAction.AppInfo -> send(LauncherEvent.Open(OpenTarget.Info(action.app.packageName)))
       is LauncherAction.Uninstall -> send(LauncherEvent.Open(OpenTarget.Uninstall(action.app.packageName)))
       is LauncherAction.OpenNotification -> send(LauncherEvent.Open(OpenTarget.Notification(action.key)))
+      is LauncherAction.NotificationAction -> send(LauncherEvent.Open(OpenTarget.NotificationAction(action.key, action.index)))
       is LauncherAction.Dismiss -> notifications.dismiss(action.key)
       LauncherAction.ClearAll -> notifications.clearAll()
       is LauncherAction.Toggle -> with(state.value.status) {

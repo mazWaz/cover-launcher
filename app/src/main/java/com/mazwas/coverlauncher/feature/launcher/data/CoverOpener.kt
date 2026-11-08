@@ -24,6 +24,7 @@ class CoverOpener(private val context: Context, private val notifications: Notif
       is OpenTarget.Info -> start(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri(target.packageName)))
       is OpenTarget.Uninstall -> start(Intent(Intent.ACTION_DELETE, packageUri(target.packageName)))
       is OpenTarget.Notification -> notification(target.key)
+      is OpenTarget.NotificationAction -> action(target.key, target.index)
       is OpenTarget.Settings -> settingsAction(target.toggle)?.let(::settings)
     }
   }
@@ -68,6 +69,15 @@ class CoverOpener(private val context: Context, private val notifications: Notif
     // no (working) content intent: open the app instead
     if (!sent) context.packageManager.getLaunchIntentForPackage(sbn.packageName)?.component?.let { app(it.packageName, it.className) }
     if (sbn.notification.flags and Notification.FLAG_AUTO_CANCEL != 0) notifications.dismiss(key)
+  }
+
+  // shortcut: a Reply button opens the notification (the app's own text box) instead of an inline one; add RemoteInput
+  // here once typing in the panel is wanted.
+  private fun action(key: String, index: Int) {
+    val action = notifications.get(key)?.notification?.actions?.getOrNull(index) ?: return
+    if (!action.remoteInputs.isNullOrEmpty()) return notification(key)
+    runCatching { action.actionIntent?.send(context, 0, null, null, null, null, coverOptions()) }
+      .onFailure { Log.w(TAG, "notification action failed", it) }
   }
 
   private fun start(intent: Intent) = runCatching {

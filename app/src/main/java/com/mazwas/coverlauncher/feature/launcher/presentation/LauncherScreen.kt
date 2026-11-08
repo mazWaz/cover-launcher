@@ -3,11 +3,9 @@ package com.mazwas.coverlauncher.feature.launcher.presentation
 import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -62,13 +60,13 @@ fun LauncherScreen(state: LauncherState, onAction: (LauncherAction) -> Unit) {
     HomePage(state, onAction)
     AnimatedVisibility(
       visible = state.overlay == Overlay.Drawer,
-      enter = fadeIn(tween(180)) + slideInVertically(tween(240, easing = FastOutSlowInEasing)) { it / 10 },
-      exit = fadeOut(tween(140)),
+      enter = fadeIn(tween(200)),
+      exit = fadeOut(tween(150)),
     ) { AppDrawer(state, onAction) }
     AnimatedVisibility(
       visible = state.overlay == Overlay.Panel,
-      enter = fadeIn(tween(180)) + slideInVertically(tween(240, easing = FastOutSlowInEasing)) { -it / 10 },
-      exit = fadeOut(tween(140)),
+      enter = fadeIn(tween(200)),
+      exit = fadeOut(tween(150)),
     ) { NotificationPanel(state, onAction) }
   }
 }
@@ -83,7 +81,7 @@ private val previewState = LauncherState(
     .map { LaunchableApp(it, it, it) },
   appCount = 10,
   notifications = listOf(
-    LauncherNotification("a", "wa", "WhatsApp", "Dimas", "Nanti malam jadi?", 940_000, true),
+    LauncherNotification("a", "wa", "WhatsApp", "Dimas", "Nanti malam jadi?", 940_000, true, listOf("Reply", "Mark as read")),
     LauncherNotification("b", "gm", "Gmail", "Your order shipped", "Arrives Friday", 400_000, true),
   ),
 )

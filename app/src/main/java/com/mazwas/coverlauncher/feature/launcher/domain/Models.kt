@@ -1,5 +1,8 @@
 package com.mazwas.coverlauncher.feature.launcher.domain
 
+import android.app.Notification
+import android.app.NotificationManager
+
 data class LaunchableApp(val packageName: String, val className: String, val label: String) {
   val key: String get() = "$packageName/$className"
 }
@@ -22,6 +25,16 @@ data class LauncherNotification(
  */
 fun notificationActions(category: String?, titles: List<String>): List<String> =
   if (category == "call") emptyList() else titles.take(3)
+
+/**
+ * Whether a just-posted notification gets the cover pop-up, by Android's heads-up rules: importance HIGH or more,
+ * lets through Do Not Disturb, new or re-alerting (an update marked "alert only once" stays quiet), and neither a group
+ * summary (its child pops up) nor ongoing (calls open their own screen; downloads and players would pop up forever).
+ */
+fun shouldPopUp(flags: Int, importance: Int, isUpdate: Boolean, passesDnd: Boolean): Boolean =
+  importance >= NotificationManager.IMPORTANCE_HIGH && passesDnd &&
+    flags and (Notification.FLAG_GROUP_SUMMARY or Notification.FLAG_ONGOING_EVENT) == 0 &&
+    !(isUpdate && flags and Notification.FLAG_ONLY_ALERT_ONCE != 0)
 
 enum class SoundMode {
   Ring, Vibrate, Silent;
@@ -124,6 +137,7 @@ data class LauncherSettings(
   val iconStyle: IconStyle = IconStyle.Mono,
   val wallpaperVersion: Long = 0, // 0 = no custom wallpaper
   val dotFilter: Boolean = true,
+  val popups: Boolean = false, // our cover pop-up instead of Samsung's
 )
 
 const val DOCK_SIZE = 4

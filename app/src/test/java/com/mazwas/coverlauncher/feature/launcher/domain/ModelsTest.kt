@@ -1,5 +1,7 @@
 package com.mazwas.coverlauncher.feature.launcher.domain
 
+import android.app.Notification
+import android.app.NotificationManager
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -36,6 +38,18 @@ class ModelsTest {
     assertEquals(listOf("Reply", "Mark as read", "Mute"), notificationActions("msg", titles))
     assertEquals(titles.take(3), notificationActions(null, titles))
     assertEquals(emptyList<String>(), notificationActions("call", listOf("Decline", "Answer")))
+  }
+
+  @Test fun `pop-up only for new or re-alerting important notifications`() {
+    val high = NotificationManager.IMPORTANCE_HIGH
+    assertEquals(true, shouldPopUp(0, high, isUpdate = false, passesDnd = true))
+    assertEquals(true, shouldPopUp(0, high, isUpdate = true, passesDnd = true)) // a new message in the same chat
+    assertEquals(true, shouldPopUp(Notification.FLAG_ONLY_ALERT_ONCE, high, isUpdate = false, passesDnd = true))
+    assertEquals(false, shouldPopUp(Notification.FLAG_ONLY_ALERT_ONCE, high, isUpdate = true, passesDnd = true))
+    assertEquals(false, shouldPopUp(0, NotificationManager.IMPORTANCE_DEFAULT, isUpdate = false, passesDnd = true))
+    assertEquals(false, shouldPopUp(0, high, isUpdate = false, passesDnd = false))
+    assertEquals(false, shouldPopUp(Notification.FLAG_GROUP_SUMMARY, high, isUpdate = false, passesDnd = true))
+    assertEquals(false, shouldPopUp(Notification.FLAG_ONGOING_EVENT, high, isUpdate = false, passesDnd = true))
   }
 
   @Test fun `cover list only adds missing apps to slot 26 and keeps every other slot`() {

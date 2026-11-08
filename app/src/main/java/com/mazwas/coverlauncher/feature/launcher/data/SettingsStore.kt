@@ -25,6 +25,7 @@ class SettingsStore(private val context: Context) {
   private val iconsKey = stringPreferencesKey("icons")
   private val wallpaperKey = longPreferencesKey("wallpaper")
   private val dotsKey = booleanPreferencesKey("dots")
+  private val popupsKey = booleanPreferencesKey("popups")
 
   val wallpaperFile = File(context.filesDir, "wallpaper.jpg")
 
@@ -34,12 +35,14 @@ class SettingsStore(private val context: Context) {
       iconStyle = p[iconsKey]?.let(IconStyle::valueOf) ?: IconStyle.Mono,
       wallpaperVersion = p[wallpaperKey] ?: 0,
       dotFilter = p[dotsKey] ?: true,
+      popups = p[popupsKey] ?: false,
     )
   }
 
   suspend fun setDock(keys: List<String>) = context.dataStore.edit { it[dockKey] = keys.joinToString("\n") }
   suspend fun setIconStyle(style: IconStyle) = context.dataStore.edit { it[iconsKey] = style.name }
   suspend fun setDotFilter(on: Boolean) = context.dataStore.edit { it[dotsKey] = on }
+  suspend fun setPopups(on: Boolean) = context.dataStore.edit { it[popupsKey] = on }
 
   /** Copies the picked image, scaled down to just cover the 748×720 screen. */
   suspend fun importWallpaper(uri: Uri) {

@@ -6,10 +6,14 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.mazwas.coverlauncher.feature.launcher.domain.LauncherNotification
 import com.mazwas.coverlauncher.feature.launcher.domain.notificationActions
+import com.mazwas.coverlauncher.feature.launcher.domain.shouldPopUp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -29,6 +33,11 @@ class NotificationStore(private val context: Context) {
     .map { list -> list.mapNotNull { it.toDomain() }.sortedByDescending { it.postedAt } }
     .flowOn(Dispatchers.Default)
 
+  private val _popups = MutableSharedFlow<LauncherNotification>(extraBufferCapacity = 1)
+
+  /** Notifications that just alerted, for CoverService's pop-up. */
+  val popups: SharedFlow<LauncherNotification> = _popups.asSharedFlow()
+
   fun get(key: String): StatusBarNotification? = raw.value.firstOrNull { it.key == key }
   fun dismiss(key: String) { listener?.cancelNotification(key) }
   fun clearAll() { listener?.cancelAllNotifications() }
@@ -41,6 +50,14 @@ class NotificationStore(private val context: Context) {
 
   internal fun publish() {
     raw.value = listener?.let { runCatching { it.activeNotifications.toList() }.getOrNull() }.orEmpty()
+  }
+
+  internal fun posted(sbn: StatusBarNotification, ranking: NotificationListenerService.Ranking) {
+    val isUpdate = raw.value.any { it.key == sbn.key } // read before publish() adds it
+    publish()
+    if (sbn.packageName != context.packageName &&
+      shouldPopUp(sbn.notification.flags, ranking.importance, isUpdate, ranking.matchesInterruptionFilter())
+    ) sbn.toDomain()?.let(_popups::tryEmit)
   }
 
   private fun StatusBarNotification.toDomain(): LauncherNotification? {
@@ -68,6 +85,9 @@ class NotificationListener : NotificationListenerService() {
 
   override fun onListenerConnected() = store.attach(this)
   override fun onListenerDisconnected() = store.attach(null)
-  override fun onNotificationPosted(sbn: StatusBarNotification?) = store.publish()
+  override fun onNotificationPosted(sbn: StatusBarNotification?, rankingMap: RankingMap?) {
+    val ranking = Ranking()
+    if (sbn != null && rankingMap?.getRanking(sbn.key, ranking) == true) store.posted(sbn, ranking) else store.publish()
+  }
   override fun onNotificationRemoved(sbn: StatusBarNotification?) = store.publish()
 }

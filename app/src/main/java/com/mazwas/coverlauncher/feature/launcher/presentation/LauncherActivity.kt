@@ -1,5 +1,6 @@
 package com.mazwas.coverlauncher.feature.launcher.presentation
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -40,6 +41,7 @@ class LauncherActivity : ComponentActivity() {
         }
       }
     }
+    if (savedInstanceState == null) openFromPopup(intent)
   }
 
   override fun onResume() {
@@ -57,5 +59,23 @@ class LauncherActivity : ComponentActivity() {
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     home.tryEmit(Unit)
+    openFromPopup(intent)
+  }
+
+  /** The pop-up hands over its tap when the cover is locked: unlocking needs an activity. */
+  private fun openFromPopup(intent: Intent) {
+    val key = intent.getStringExtra(OPEN_KEY) ?: return
+    val action = intent.getIntExtra(OPEN_ACTION, -1)
+    unlockThen { opener.open(if (action < 0) OpenTarget.Notification(key) else OpenTarget.NotificationAction(key, action)) }
+  }
+
+  companion object {
+    private const val OPEN_KEY = "open_notification"
+    private const val OPEN_ACTION = "open_action"
+
+    /** Opens notification [key] (or presses its button [action]) after unlocking. Start it with coverOptions(). */
+    fun openNotification(context: Context, key: String, action: Int = -1): Intent =
+      Intent(context, LauncherActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        .putExtra(OPEN_KEY, key).putExtra(OPEN_ACTION, action)
   }
 }

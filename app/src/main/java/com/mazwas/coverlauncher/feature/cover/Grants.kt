@@ -54,6 +54,17 @@ class Grants(private val context: Context) {
     Shell.exec("settings", "put", "secure", key, next)
   }
 
+  /**
+   * Samsung's own cover pop-ups, off while ours is on so nothing pops up twice. Proven on the phone 2026-11-08 with
+   * WhatsApp messages: `edge_lighting` 0 stops the brief pill, `cover_screen_show_notification` 0 the detailed card it
+   * falls back to; `heads_up_notifications_enabled` stops neither. 1 is One UI's default for both (and this phone's).
+   * Undo by hand (e.g. after uninstalling): `settings put system edge_lighting 1; settings put secure cover_screen_show_notification 1`
+   */
+  fun samsungPopups(on: Boolean) {
+    val v = if (on) 1 else 0
+    Shell.exec("sh", "-c", "settings put system edge_lighting $v; settings put secure cover_screen_show_notification $v")
+  }
+
   private fun rebindCoverService() {
     val all = enabledServices()
     val without = all.filterNot { it == coverService }.joinToString(":")

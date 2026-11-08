@@ -250,8 +250,9 @@ private fun BrightnessRow(brightness: CoverBrightness, onAction: (LauncherAction
   }
 }
 
+/** One notification card; the panel lists them, CoverPopup shows one at a time. */
 @Composable
-private fun NotificationRow(note: LauncherNotification, now: Long, onAction: (LauncherAction) -> Unit, modifier: Modifier) {
+internal fun NotificationRow(note: LauncherNotification, now: Long, onAction: (LauncherAction) -> Unit, modifier: Modifier) {
   val shape = RoundedCornerShape(14.dp)
   SwipeToDismissBox(
     state = rememberSwipeToDismissBoxState(),

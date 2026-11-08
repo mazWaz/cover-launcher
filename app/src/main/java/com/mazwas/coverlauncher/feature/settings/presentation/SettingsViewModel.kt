@@ -23,6 +23,7 @@ data class SettingsState(
   val hasWallpaper: Boolean = false,
   val dotFilter: Boolean = true,
   val iconStyle: IconStyle = IconStyle.Mono,
+  val popups: Boolean = false,
   val importing: Boolean = false,
   val shizuku: Boolean = false,
   val notificationAccess: Boolean = false,
@@ -35,6 +36,7 @@ sealed interface SettingsAction {
   data object ResetWallpaper : SettingsAction
   data class SetDotFilter(val on: Boolean) : SettingsAction
   data class SetIconStyle(val style: IconStyle) : SettingsAction
+  data class SetPopups(val on: Boolean) : SettingsAction
   data object FixPermissions : SettingsAction
   data object Refresh : SettingsAction
   data object Back : SettingsAction
@@ -57,7 +59,7 @@ class SettingsViewModel(
   val events = eventChannel.receiveAsFlow()
 
   val state: StateFlow<SettingsState> = combine(settings.settings, notifications.connected, local) { s, access, l ->
-    SettingsState(s.wallpaperVersion != 0L, s.dotFilter, s.iconStyle, l.importing, l.shizuku, access, l.coverService)
+    SettingsState(s.wallpaperVersion != 0L, s.dotFilter, s.iconStyle, s.popups, l.importing, l.shizuku, access, l.coverService)
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsState())
 
   fun onAction(action: SettingsAction) {
@@ -71,6 +73,11 @@ class SettingsViewModel(
       SettingsAction.ResetWallpaper -> viewModelScope.launch { settings.resetWallpaper() }
       is SettingsAction.SetDotFilter -> viewModelScope.launch { settings.setDotFilter(action.on) }
       is SettingsAction.SetIconStyle -> viewModelScope.launch { settings.setIconStyle(action.style) }
+      // without Shizuku Samsung's pop-ups would stay as they are and both would show: the screen hides the switch then
+      is SettingsAction.SetPopups -> if (Shell.ready()) viewModelScope.launch {
+        grants.samsungPopups(!action.on)
+        settings.setPopups(action.on)
+      }
       SettingsAction.FixPermissions -> viewModelScope.launch {
         grants.apply()
         delay(1_000) // the shell commands run on their own threads; re-read once they've had time to land

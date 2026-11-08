@@ -105,6 +105,12 @@ fun SettingsScreen(state: SettingsState, onAction: (SettingsAction) -> Unit) {
     Setting("icons") {
       SegmentedControl(listOf(IconStyle.Mono to "mono", IconStyle.Color to "color"), state.iconStyle, { onAction(SettingsAction.SetIconStyle(it)) })
     }
+    Section("alerts")
+    // ours replaces Samsung's, which only Shizuku can switch off
+    Setting("pop-ups") {
+      if (state.shizuku) SegmentedControl(listOf(true to "ours", false to "samsung"), state.popups, { onAction(SettingsAction.SetPopups(it)) })
+      else Label("needs shizuku", color = MaterialTheme.status.disabled)
+    }
 
     Section("system")
     Setting("shizuku") { StatusDot(state.shizuku, if (state.shizuku) "ready" else "off") }

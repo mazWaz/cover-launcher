@@ -27,7 +27,15 @@ import com.mazwas.coverlauncher.core.system.MAIN_DISPLAY
 import com.mazwas.coverlauncher.core.system.TAG
 import com.mazwas.coverlauncher.core.system.coverOptions
 import com.mazwas.coverlauncher.core.system.pullToCover
+import com.mazwas.coverlauncher.feature.launcher.data.NotificationStore
+import com.mazwas.coverlauncher.feature.launcher.data.SettingsStore
 import com.mazwas.coverlauncher.feature.launcher.presentation.LauncherActivity
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import org.koin.android.ext.android.get
+import org.koin.android.ext.android.inject
 import rikka.shizuku.Shizuku
 
 /**
@@ -40,6 +48,10 @@ class CoverService : AccessibilityService() {
   private val displays by lazy { getSystemService(DisplayManager::class.java) }
   private val handler = Handler(Looper.getMainLooper())
   private var torchBackAt = 0L
+  private val notifications: NotificationStore by inject()
+  private val settings: SettingsStore by inject()
+  private val popup by lazy { CoverPopup(this, get(), notifications, get()) }
+  private val scope = MainScope()
 
   // Shizuku hands out its binder only when our uid starts; its "send to every client" at server start misses us on
   // Android 17. We start before Shizuku at boot and never stop (bound a11y service), so without the binder:
@@ -60,10 +72,13 @@ class CoverService : AccessibilityService() {
     holdCoverOn()
     // boot / reinstall left no launcher task: create it now so the cover wakes to it (it shows over the lock screen)
     showLauncher()
+    scope.launch { notifications.popups.collect { if (settings.settings.first().popups) popup.show(it) } }
   }
 
   override fun onDestroy() {
     connected = false
+    scope.cancel()
+    popup.hide()
     unregisterReceiver(screenOff)
     keepAwakePrefs().unregisterOnSharedPreferenceChangeListener(awakeChanged)
     releaseCover()

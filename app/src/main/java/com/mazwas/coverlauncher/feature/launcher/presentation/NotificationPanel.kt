@@ -26,11 +26,21 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.painterResource
+import com.mazwas.coverlauncher.feature.launcher.domain.CoverBrightness
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,6 +72,7 @@ fun NotificationPanel(state: LauncherState, onAction: (LauncherAction) -> Unit, 
       .padding(top = 14.dp),
   ) {
     QuickToggles(state, onAction)
+    state.coverBrightness?.let { BrightnessRow(it, onAction) }
     Row(
       Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 6.dp),
       verticalAlignment = Alignment.CenterVertically,
@@ -137,6 +148,31 @@ private fun QuickToggles(state: LauncherState, onAction: (LauncherAction) -> Uni
 }
 
 private const val TILES_PER_PAGE = 5
+
+/** Cover brightness. Dragging sets a manual level, written once on release; AUTO hands it back to Samsung. */
+@Composable
+private fun BrightnessRow(brightness: CoverBrightness, onAction: (LauncherAction) -> Unit) {
+  var level by remember(brightness.level) { mutableFloatStateOf(brightness.level.toFloat()) }
+  Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Icon(painterResource(R.drawable.ic_sun), "Cover brightness", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+    Slider(
+      value = level,
+      onValueChange = { level = it },
+      onValueChangeFinished = { onAction(LauncherAction.SetCoverBrightness(level.roundToInt())) },
+      valueRange = 1f..255f,
+      modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+    )
+    Label(
+      "auto", small = true,
+      color = if (brightness.auto) MaterialTheme.colorScheme.onSurface else MaterialTheme.status.disabled,
+      modifier = Modifier
+        .minimumInteractiveComponentSize()
+        .clip(RoundedCornerShape(50))
+        .clickable { onAction(LauncherAction.CoverBrightnessAuto) }
+        .padding(8.dp),
+    )
+  }
+}
 
 @Composable
 private fun NotificationRow(note: LauncherNotification, now: Long, onAction: (LauncherAction) -> Unit, modifier: Modifier) {

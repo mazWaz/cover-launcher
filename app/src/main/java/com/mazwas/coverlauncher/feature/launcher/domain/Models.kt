@@ -55,6 +55,16 @@ data class SystemStatus(
   }
 }
 
+/** Samsung's own cover brightness: [level] 1..255 (`system/sub_screen_brightness`) and whether auto brightness drives it. */
+data class CoverBrightness(val level: Int, val auto: Boolean)
+
+/** Output of `settings get system sub_screen_brightness; settings get system sub_screen_brightness_mode`. */
+fun parseCoverBrightness(out: String?): CoverBrightness? {
+  val lines = out?.lines()?.map { it.trim() } ?: return null
+  val level = lines.getOrNull(0)?.toIntOrNull() ?: return null
+  return CoverBrightness(level.coerceIn(1, 255), auto = lines.getOrNull(1) == "1")
+}
+
 /** Quick settings tiles in panel order; the panel pages them by five. */
 enum class QuickToggle { Wifi, Bluetooth, Data, Torch, Dnd, Airplane, Sound, Location, Saver }
 

@@ -7,12 +7,14 @@ import com.mazwas.coverlauncher.feature.launcher.data.AppsSource
 import com.mazwas.coverlauncher.feature.launcher.data.NotificationStore
 import com.mazwas.coverlauncher.feature.launcher.data.SettingsStore
 import com.mazwas.coverlauncher.feature.launcher.data.SystemStatusSource
+import com.mazwas.coverlauncher.feature.launcher.domain.CoverBrightness
 import com.mazwas.coverlauncher.feature.launcher.domain.DOCK_SIZE
 import com.mazwas.coverlauncher.feature.launcher.domain.LaunchableApp
 import com.mazwas.coverlauncher.feature.launcher.domain.OpenTarget
 import com.mazwas.coverlauncher.feature.launcher.domain.QuickToggle
 import com.mazwas.coverlauncher.feature.launcher.domain.filterApps
 import com.mazwas.coverlauncher.feature.launcher.domain.resolveDock
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -31,7 +33,7 @@ class LauncherViewModel(
   private val system: SystemStatusSource,
   private val clock: Clock,
 ) : ViewModel() {
-  private data class Ui(val query: String = "", val overlay: Overlay = Overlay.None)
+  private data class Ui(val query: String = "", val overlay: Overlay = Overlay.None, val brightness: CoverBrightness? = null)
 
   private val ui = MutableStateFlow(Ui())
   private val eventChannel = Channel<LauncherEvent>()
@@ -57,13 +59,17 @@ class LauncherViewModel(
       iconStyle = s.iconStyle,
       wallpaper = if (s.wallpaperVersion == 0L) null
       else Wallpaper(settings.wallpaperFile.path, s.wallpaperVersion, s.dotFilter),
+      coverBrightness = u.brightness,
     )
   }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LauncherState())
 
   fun onAction(action: LauncherAction) {
     when (action) {
       LauncherAction.OpenDrawer -> ui.update { it.copy(overlay = Overlay.Drawer) }
-      LauncherAction.OpenPanel -> ui.update { it.copy(overlay = Overlay.Panel) }
+      LauncherAction.OpenPanel -> {
+        ui.update { it.copy(overlay = Overlay.Panel) }
+        viewModelScope.launch(Dispatchers.IO) { system.coverBrightness()?.let { b -> ui.update { it.copy(brightness = b) } } }
+      }
       LauncherAction.Close -> ui.value = Ui()
       LauncherAction.OpenSettings -> send(LauncherEvent.NavigateSettings)
       is LauncherAction.Search -> ui.update { it.copy(query = action.query) }
@@ -81,6 +87,14 @@ class LauncherViewModel(
         else system.toggle(action.toggle, !isOn(action.toggle))
       }
       is LauncherAction.ToggleSettings -> send(LauncherEvent.Open(OpenTarget.Settings(action.toggle)))
+      is LauncherAction.SetCoverBrightness -> {
+        system.setCoverBrightness(action.level)
+        ui.update { it.copy(brightness = CoverBrightness(action.level, auto = false)) }
+      }
+      LauncherAction.CoverBrightnessAuto -> {
+        system.setCoverBrightnessAuto()
+        ui.update { it.copy(brightness = it.brightness?.copy(auto = true)) }
+      }
     }
   }
 

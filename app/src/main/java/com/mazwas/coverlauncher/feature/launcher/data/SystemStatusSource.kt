@@ -23,7 +23,9 @@ import android.telephony.TelephonyManager
 import android.util.Log
 import com.mazwas.coverlauncher.core.system.Shell
 import com.mazwas.coverlauncher.core.system.TAG
+import com.mazwas.coverlauncher.feature.launcher.domain.CoverBrightness
 import com.mazwas.coverlauncher.feature.launcher.domain.QuickToggle
+import com.mazwas.coverlauncher.feature.launcher.domain.parseCoverBrightness
 import com.mazwas.coverlauncher.feature.launcher.domain.SoundMode
 import com.mazwas.coverlauncher.feature.launcher.domain.SystemStatus
 import kotlinx.coroutines.channels.awaitClose
@@ -141,6 +143,17 @@ class SystemStatusSource(private val context: Context) {
       QuickToggle.Sound -> setSound(if (on) SoundMode.Ring else SoundMode.Silent)
     }
   }
+
+  /** Samsung's cover brightness: a hidden setting, so read through the shell. Blocking; null without Shizuku. */
+  fun coverBrightness(): CoverBrightness? = if (!Shell.ready()) null else parseCoverBrightness(
+    Shell.output("sh", "-c", "settings get system sub_screen_brightness; settings get system sub_screen_brightness_mode"),
+  )
+
+  /** A manual level turns auto off first: while auto is on, Samsung's adaptive brightness keeps rewriting the level. */
+  fun setCoverBrightness(level: Int) =
+    Shell.exec("sh", "-c", "settings put system sub_screen_brightness_mode 0; settings put system sub_screen_brightness $level")
+
+  fun setCoverBrightnessAuto() = Shell.exec("settings", "put", "system", "sub_screen_brightness_mode", "1")
 
   /** Silent needs Do Not Disturb access (Grants: allow_dnd). */
   fun setSound(mode: SoundMode) {

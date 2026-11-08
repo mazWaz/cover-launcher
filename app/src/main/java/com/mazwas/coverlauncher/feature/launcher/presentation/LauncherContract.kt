@@ -1,5 +1,6 @@
 package com.mazwas.coverlauncher.feature.launcher.presentation
 
+import com.mazwas.coverlauncher.feature.launcher.domain.CoverBrightness
 import com.mazwas.coverlauncher.feature.launcher.domain.IconStyle
 import com.mazwas.coverlauncher.feature.launcher.domain.LaunchableApp
 import com.mazwas.coverlauncher.feature.launcher.domain.LauncherNotification
@@ -26,6 +27,7 @@ data class LauncherState(
   val notificationAccess: Boolean = true,
   val iconStyle: IconStyle = IconStyle.Mono,
   val wallpaper: Wallpaper? = null,
+  val coverBrightness: CoverBrightness? = null, // read when the panel opens; null without Shizuku (no slider)
 )
 
 sealed interface LauncherAction {
@@ -45,6 +47,8 @@ sealed interface LauncherAction {
   data object ClearAll : LauncherAction
   data class Toggle(val toggle: QuickToggle) : LauncherAction
   data class ToggleSettings(val toggle: QuickToggle) : LauncherAction
+  data class SetCoverBrightness(val level: Int) : LauncherAction
+  data object CoverBrightnessAuto : LauncherAction
 }
 
 sealed interface LauncherEvent {

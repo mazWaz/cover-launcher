@@ -22,6 +22,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mazwas.coverlauncher.core.designsystem.NothingTheme
 import com.mazwas.coverlauncher.core.presentation.ObserveAsEvents
+import com.mazwas.coverlauncher.feature.launcher.domain.CoverBrightness
 import com.mazwas.coverlauncher.feature.launcher.domain.LaunchableApp
 import com.mazwas.coverlauncher.feature.launcher.domain.LauncherNotification
 import com.mazwas.coverlauncher.feature.launcher.domain.OpenTarget
@@ -76,6 +77,7 @@ private val previewState = LauncherState(
   date = "WED 04 NOV",
   now = 1_000_000,
   status = SystemStatus(batteryPercent = 72, wifiOn = true, bluetoothOn = true),
+  coverBrightness = CoverBrightness(100, auto = true),
   dock = listOf("Camera", "Chrome", "Gallery", "Messages").map { LaunchableApp(it, it, it) },
   apps = listOf("Calculator", "Calendar", "Camera", "Chrome", "Clock", "Gallery", "Maps", "Messages", "Phone", "Spotify")
     .map { LaunchableApp(it, it, it) },

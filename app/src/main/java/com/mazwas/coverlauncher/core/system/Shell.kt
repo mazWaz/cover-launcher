@@ -17,6 +17,12 @@ object Shell {
   fun ready(): Boolean =
     Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
 
+  /** Runs [cmd] and returns what it printed; null if Shizuku isn't there. Blocking: call it off the main thread. */
+  fun output(vararg cmd: String): String? = runCatching {
+    val p = newProcess.invoke(null, cmd, null, null) as Process
+    p.inputStream.bufferedReader().readText().also { p.waitFor() }
+  }.onFailure { Log.e(TAG, "shell failed", it) }.getOrNull()
+
   fun exec(vararg cmd: String) = thread {
     runCatching {
       val p = newProcess.invoke(null, cmd, null, null) as Process

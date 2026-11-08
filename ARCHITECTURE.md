@@ -5,7 +5,7 @@ com.mazwas.coverlauncher
 ├── App.kt                         Koin start; runs Grants whenever Shizuku comes up
 ├── di/AppModule.kt                every binding
 ├── core/
-│   ├── system/                    Shell (Shizuku), Cover (display 1, coverOptions, unlockThen), Clock
+│   ├── system/                    Shell (Shizuku), Cover (display 1, coverOptions, unlockThen, pullToCover, keepFolded), Clock
 │   ├── designsystem/              NothingTheme (colors, type), components (Label, SegmentedBar, dotGrid, …)
 │   ├── presentation/              ObserveAsEvents
 │   └── navigation/                routes + AppNavHost (fades only)

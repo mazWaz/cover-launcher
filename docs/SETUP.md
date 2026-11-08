@@ -59,7 +59,8 @@ Semua perintah di bawah dijalankan dari komputer. Format keluaran di kolom kanan
 
 | Yang dicek | Perintah | Harapan |
 |---|---|---|
-| State lipat dipaksa | `adb shell cmd device_state print-state` | `0` (CLOSED) |
+| State lipat dipaksa | `adb shell "dumpsys device_state \| grep 'Override Request active'"` | `true` |
+| Penjaga lipat hidup | `adb shell "ps -A -o USER,ARGS \| grep -c '[c]overlauncher-fold'"` | `2` (sh + subshell pembacanya) |
 | Boleh start dari background | `adb shell appops get com.mazwas.coverlauncher SYSTEM_ALERT_WINDOW` | `SYSTEM_ALERT_WINDOW: allow` |
 | Accessibility hidup | `adb shell settings get secure enabled_accessibility_services` | mengandung `com.mazwas.coverlauncher/com.mazwas.coverlauncher.feature.cover.CoverService` |
 | Accessibility saklar utama | `adb shell settings get secure accessibility_enabled` | `1` |
@@ -85,12 +86,13 @@ Yang bisa gagal dan penanganannya:
 | Shizuku tetap `off` | UI Shizuku bukan bahasa Inggris, atau pairing wireless debugging hilang | buka Shizuku, Start manual; pairing ulang bila perlu |
 | Apps balik ke "Open your phone" | Shizuku belum hidup | Start Shizuku, buka app lagi |
 | Cover bangun ke jam Samsung | accessibility service mati | Settings → Fix permissions, atau nyalakan manual di Accessibility |
-| Layar utama menyala saat HP dibuka | state lipat di-reset (mis. sesudah update One UI) | `adb shell cmd device_state state 0` |
+| Layar utama menyala saat HP dibuka | penjaga lipat tidak jalan (Shizuku belum hidup saat `Grants` jalan) | Start Shizuku lalu Settings → Fix permissions; darurat: `adb shell cmd device_state state 0` |
 
 ## 7. Mundur
 
 ```sh
 adb uninstall com.mazwas.coverlauncher
+adb shell pkill -f coverlauncher-fold       # penjaga lipat jalan sebagai shell: TIDAK ikut hilang saat uninstall
 adb shell cmd device_state state reset      # kembalikan layar utama
 ```
 
@@ -102,9 +104,10 @@ adb shell settings put secure enabled_accessibility_services "$(adb shell settin
 adb shell settings put secure enabled_notification_listeners "$(adb shell settings get secure enabled_notification_listeners | tr -d '\r' | sed 's#com.mazwas.coverlauncher[^:]*##; s#::#:#g; s#^:##; s#:$##')"
 ```
 
-## 8. Kalau HP dipakai tanpa keeper
+## 8. Penjaga lipat
 
-Launcher memaksa state `CLOSED` lewat Shizuku setiap kali binder muncul, jadi biasanya tidak perlu skrip
-tambahan. Kalau layar malah mati saat HP dibuka (override state terlempar oleh layanan Samsung), pilihan
-cepat: lipat HP lagi, atau jalankan `cmd device_state state 0` manual. Skrip keeper di `/data/local/tmp`
-di luar repo ini dan tidak dijalankan otomatis.
+Override `CLOSED` hilang setiap kali HP dilipat kembali; launcher menjalankan penjaganya sendiri
+(`coverlauncher-fold`, lihat [HOW-IT-WORKS](HOW-IT-WORKS.md) §1) yang memasangnya lagi sekitar 1 s kemudian.
+Skrip lama di `/data/local/tmp` (`keepcover.sh`, `keepstate.sh`) tidak dibutuhkan lagi dan jangan dijalankan
+bersamaan: keduanya *polling* `print-state` tiap detik. Penjaga baru hidup setelah reboot begitu Shizuku hidup
+dan `Grants` jalan.

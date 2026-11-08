@@ -38,7 +38,16 @@ settings put secure ACCESSIBILITY_ENABLED 1
 Dipanggil dari `App.onCreate` lewat `Shizuku.addBinderReceivedListenerSticky`, jadi berjalan **setiap kali
 binder Shizuku muncul** — termasuk setelah reboot. Semua perintah idempotent.
 
-Balik ke normal: `adb shell cmd device_state state reset`.
+**Penjaga lipat (`keepFolded()` di `core/system/Cover.kt`).** Override `CLOSED` bertahan saat HP dibuka, tetapi
+**hilang begitu HP dilipat kembali** (terukur 2026-11-08: base `0 → 2 → 3 → 2 → 0`, override lepas di `0`), jadi
+pembukaan berikutnya akan menyalakan layar dalam yang mati. `Grants` karena itu juga menjalankan proses shell
+`coverlauncher-fold`: `logcat -s DeviceStateManagerService:D` dan, pada setiap `onStateChanged`, `sleep 1;
+cmd device_state state 0`. Permintaan kita sendiri tercatat sebagai `requestStateInternal`, bukan `onStateChanged`,
+jadi penjaga tidak memicu dirinya sendiri. Setiap start membunuh penjaga lama dulu (`pkill`, termasuk `logcat`-nya),
+jadi hanya ada satu. Ia jalan sebagai uid shell (Shizuku), **tidak pernah** sebagai app — kalau tidak, `pkill` dari
+shell tak bisa menghentikannya (bug yang membuat OpenCover menumpuk 12 watcher).
+
+Balik ke normal: `adb shell "pkill -f coverlauncher-fold; cmd device_state state reset"`.
 
 ## 2. Cover home selalu dilaporkan balik ke launcher
 

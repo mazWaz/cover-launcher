@@ -8,8 +8,9 @@ Nothing-inspired design: OLED black, monochrome, dot-matrix clock.
 
 > [!WARNING]
 > This app **forces the phone into the folded state** so only the cover screen is used. If your main screen
-> works, unfolding will no longer switch to it while the app is installed. Undo with
-> `adb shell cmd device_state state reset` (see [Uninstall](#uninstall)).
+> works, unfolding will no longer switch to it while the app is installed. A small shell process
+> (`coverlauncher-fold`) re-applies the fold every time the phone is folded back, and it outlives an uninstall:
+> undo with `adb shell "pkill -f coverlauncher-fold; cmd device_state state reset"` (see [Uninstall](#uninstall)).
 
 ## Features
 
@@ -139,12 +140,13 @@ Shizuku has to be running for apps to open on the cover.
 | No notifications in the panel | Settings → **Fix permissions**. |
 | Cover wakes to Samsung's clock instead of the launcher | Check *Settings → Accessibility → Installed apps → Cover Launcher* is on, or tap **Fix permissions**. |
 | Cover stuck on a half-transparent lock clock right after a One UI update | Samsung's post-update intro is waiting on the (dead) main screen and blocks the cover. Turn the main display on with `adb shell cmd device_state state 3`, finish the intro there (blind taps, or mirrored with [scrcpy](https://github.com/Genymobile/scrcpy) `--display-id 0`), then `adb shell cmd device_state state 0`. |
-| Main screen should work again | `adb shell cmd device_state state reset` |
+| Main screen should work again | `adb shell "pkill -f coverlauncher-fold; cmd device_state state reset"` |
 
 ## Uninstall
 
 ```sh
 adb uninstall com.mazwas.coverlauncher
+adb shell pkill -f coverlauncher-fold    # the fold keeper runs as the shell user: uninstalling doesn't stop it
 adb shell cmd device_state state reset   # give the main screen back
 ```
 

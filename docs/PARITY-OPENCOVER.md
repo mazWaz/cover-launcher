@@ -91,9 +91,10 @@ get-allowed-network-types-for-users -s 0` → `No valid subscription found`, jad
    meminta ulang state **1 (TENT)** setiap kali sistem "Committing state" 0 atau 3 — Android membuang override
    setiap kali state fisik berubah. TENT dipilih karena sensor HP tidak pernah melaporkannya, jadi cover tetap
    menyala apa pun kata sensor engsel. Ini berbeda dari `/data/local/tmp/keepcover.sh` di HP ini, yang
-   *polling* `cmd device_state print-state` tiap 1 s dan memaksa state 0. Launcher kita hanya mengulang
-   `state 0` saat binder Shizuku muncul, jadi kalah kalau Samsung menimpa belakangan. Kalau layar mati saat HP
-   dibuka, pindahkan watcher semacam itu ke dalam app (`sh -c` lewat Shizuku), jangan andalkan skrip manual.
+   *polling* `cmd device_state print-state` tiap 1 s dan memaksa state 0. **Sudah ditangani di launcher kita
+   (2026-11-08):** terukur bahwa override `CLOSED` bertahan saat dibuka tetapi hilang saat dilipat kembali;
+   `keepFolded()` menjalankan penjaga shell sendiri yang memasangnya lagi pada setiap `onStateChanged`
+   (uji di HP: buka → lipat → buka, cover tetap menyala). Lihat [HOW-IT-WORKS](HOW-IT-WORKS.md) §1.
    Catatan dari HP ini (2026-11-08): ada 11 proses `opencover-fold-watch` yang jalan bersamaan.
 
 5. **Ada jalan menghindari shell sama sekali.** `apps/CoverAllowList.kt` menulis semua paket ke secure

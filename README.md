@@ -86,7 +86,10 @@ Open Cover Launcher on the cover (from MultiStar's Launcher Widget, or from the 
 adb shell am start --display 1 -n com.mazwas.coverlauncher/.feature.launcher.presentation.LauncherActivity
 ```
 
-Shizuku asks for permission: tap **Allow** (or enable Cover Launcher under *Shizuku → Authorized applications*).
+Shizuku asks for permission: tap **Allow**. That dialog is the only place: on Android 17 *Shizuku → Authorized
+applications* stays empty for every app (it says "Authorized 0" even while the launcher uses Shizuku). Shizuku's
+server builds that list with `getInstalledPackages`, and on this phone that call never reaches the package manager
+(Shizuku 13.5 server / 13.6 app); declaring `moe.shizuku.client.V3_SUPPORT` was tried and changes nothing.
 The launcher then sets everything else up by itself through Shizuku:
 
 - forces the folded state (`cmd device_state state 0`),
@@ -147,7 +150,7 @@ Shizuku has to be running for apps to open on the cover.
 | Problem | Fix |
 |---|---|
 | Apps show "Open your phone to continue" | Shizuku isn't running and the app was installed after it last ran (so it isn't on the cover list yet): start Shizuku, then open the app again. |
-| Settings shows Shizuku *off* | Start Shizuku. If it's running, allow Cover Launcher in *Shizuku → Authorized applications*. |
+| Settings shows Shizuku *off* | Start Shizuku. If it's running, press *Start* in Shizuku again: the launcher asks for access each time Shizuku comes up. To take its access away, stop Shizuku or uninstall the launcher (it isn't listed under *Authorized applications*). |
 | No notifications in the panel | Settings → **Fix permissions**. |
 | Cover wakes to Samsung's clock instead of the launcher | Check *Settings → Accessibility → Installed apps → Cover Launcher* is on, or tap **Fix permissions**. |
 | Cover stuck on a half-transparent lock clock right after a One UI update | Samsung's post-update intro is waiting on the (dead) main screen and blocks the cover. Turn the main display on with `adb shell cmd device_state state 3`, finish the intro there (blind taps, or mirrored with [scrcpy](https://github.com/Genymobile/scrcpy) `--display-id 0`), then `adb shell cmd device_state state 0`. |

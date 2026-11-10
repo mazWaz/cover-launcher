@@ -57,6 +57,27 @@ internal object PreviewGeometry {
   }
 
   /**
+   * A stream whose shape differs from the sensor's shows only the middle of it: 16:9 loses the top and bottom of a
+   * 4:3 sensor, 1:1 its sides. Takes a point of the stream (0..1) to the same point of the whole sensor (0..1).
+   */
+  fun streamToSensor(x: Float, y: Float, streamAspect: Float, sensorAspect: Float): Pair<Float, Float> {
+    val keptW = minOf(1f, streamAspect / sensorAspect)
+    val keptH = minOf(1f, sensorAspect / streamAspect)
+    return 0.5f + (x - 0.5f) * keptW to 0.5f + (y - 0.5f) * keptH
+  }
+
+  /**
+   * The middle of a [w] x [h] sensor that a stream of [streamAspect] (width / height) shows: left, top, width,
+   * height. All four are even, so the crop starts on the same colour of the mosaic as the sensor does.
+   */
+  fun sensorCrop(w: Int, h: Int, streamAspect: Float): IntArray {
+    val sensorAspect = w.toFloat() / h
+    val cw = Math.round(w * minOf(1f, streamAspect / sensorAspect) / 2) * 2
+    val ch = Math.round(h * minOf(1f, sensorAspect / streamAspect) / 2) * 2
+    return intArrayOf((w - cw) / 4 * 2, (h - ch) / 4 * 2, cw, ch)
+  }
+
+  /**
    * EXIF orientation that shows a stored sensor image the way the preview shows it: turned clockwise by [degrees],
    * then flipped left-right when [flip]. (2/4/5/7 are EXIF's mirrored codes; 5 and 7 are the two diagonal flips.)
    */

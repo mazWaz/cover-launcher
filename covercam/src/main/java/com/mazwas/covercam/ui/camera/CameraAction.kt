@@ -54,6 +54,7 @@ sealed interface CameraAction {
   data object ToggleGeotag : CameraAction
   data object ToggleLevel : CameraAction
   data object ToggleDng : CameraAction
+  data object ToggleLogVideo : CameraAction
   data object ToggleImuRotation : CameraAction
   data object CycleVideoRes : CameraAction
   data object CycleVideoFps : CameraAction

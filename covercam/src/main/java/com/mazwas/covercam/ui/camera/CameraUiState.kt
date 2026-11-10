@@ -43,6 +43,8 @@ data class CameraUiState(
   val manualFocus: Boolean = false,
   val locked: Boolean = false,
   val rawActive: Boolean = false,
+  /** The picture on screen has the log curve, and the next take is recorded with it. */
+  val logActive: Boolean = false,
   val lastThumb: Uri? = null,
   val zoom: Float = 1f,
   val slowPreview: Boolean = false,
@@ -55,12 +57,16 @@ data class CameraUiState(
   val pictureAspect: Float = 4f / 3f,
 
   // ---- engine settings (preference-backed) ----
+  /** The shape of what the next shot stores, which is also the shape of the preview. */
   val ratioLabel: String = "4:3",
+  /** False while that shape is not a choice: video is 16:9. */
+  val ratioChoosable: Boolean = true,
   val quality: Int = 95,
   val soundOn: Boolean = true,
   val geotagOn: Boolean = true,
   val levelOn: Boolean = true,
   val dngOn: Boolean = false,
+  val logVideo: Boolean = false,
   val imuRotationOn: Boolean = false,
   val video4k: Boolean = false,
   val video60: Boolean = false,

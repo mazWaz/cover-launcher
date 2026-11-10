@@ -58,6 +58,24 @@ class PreviewGeometryTest {
     assertPoint(0f, 0.5f, PreviewGeometry.tapToSensor(0f, 360f, w, h, 748f, 561f, 0, mirrored = false)!!)
   }
 
+  @Test
+  fun `a 16 to 9 or square preview is the middle of the 4 to 3 sensor`() {
+    // 16:9 keeps the whole width and three quarters of the height
+    assertPoint(0f, 0.125f, PreviewGeometry.streamToSensor(0f, 0f, 16f / 9f, aspect))
+    assertPoint(1f, 0.875f, PreviewGeometry.streamToSensor(1f, 1f, 16f / 9f, aspect))
+    // 1:1 keeps the whole height and three quarters of the width
+    assertPoint(0.125f, 0f, PreviewGeometry.streamToSensor(0f, 0f, 1f, aspect))
+    // the sensor's own shape is the whole sensor
+    assertPoint(0.3f, 0.7f, PreviewGeometry.streamToSensor(0.3f, 0.7f, aspect, aspect))
+  }
+
+  @Test
+  fun `a DNG is cropped to the middle of the sensor that the preview showed`() {
+    assertEquals(listOf(0, 374, 4000, 2250), PreviewGeometry.sensorCrop(4000, 3000, 1920f / 1080).toList())
+    assertEquals(listOf(500, 0, 3000, 3000), PreviewGeometry.sensorCrop(4000, 3000, 1f).toList())
+    assertEquals(listOf(0, 0, 4000, 3000), PreviewGeometry.sensorCrop(4000, 3000, 1920f / 1440).toList())
+  }
+
   /** Applies an EXIF orientation to a tiny labelled image the way a viewer does; pixels are listed row by row. */
   private fun show(code: Int, px: List<String>, w: Int): List<String> {
     val h = px.size / w

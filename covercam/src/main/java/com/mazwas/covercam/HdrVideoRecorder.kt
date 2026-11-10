@@ -8,7 +8,8 @@ import android.util.Log
 import android.view.Surface
 
 /**
- * HEVC Main10 / HLG recorder used for the experimental HDR video mode.
+ * HEVC Main10 recorder of the 10-bit video mode: HLG at 30 fps, or log at 60 (the camera's tone curve decides
+ * which; the file is tagged HLG either way, the encoder ignores any other transfer).
  *
  * Deliberately isolated from the MediaRecorder path: if anything here fails, normal
  * 1080p recording keeps working untouched. Video-only (no audio) for now.
@@ -29,7 +30,7 @@ class HdrVideoRecorder(
   fun prepare(): Surface {
     val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_HEVC, width, height).apply {
       setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-      setInteger(MediaFormat.KEY_BIT_RATE, 40_000_000)
+      setInteger(MediaFormat.KEY_BIT_RATE, if (fps > 30) 60_000_000 else 40_000_000)
       setInteger(MediaFormat.KEY_FRAME_RATE, fps)
       setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
     }
@@ -50,7 +51,7 @@ class HdrVideoRecorder(
   }
 
   /**
-   * Moves whatever the encoder already produced into the muxer. Called from the main thread every 40 ms, so while
+   * Moves whatever the encoder already produced into the muxer. Called from the main thread every 16 ms, so while
    * recording it never waits for the encoder; only the final drain does, and that one gives up after two seconds
    * instead of hanging the app on an encoder that never signals its end.
    */

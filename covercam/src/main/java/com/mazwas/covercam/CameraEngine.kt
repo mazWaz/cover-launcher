@@ -262,8 +262,17 @@ class CameraEngine(private val ctx: Context) {
 
   enum class Ratio(val label: String) { R4_3("4:3"), R16_9("16:9"), R1_1("1:1") }
 
-  var ratio: Ratio = Ratio.R4_3
-    private set
+  /** The ratio chosen for photos. A JPEG is stored in it; a DNG keeps the whole sensor and carries it as its crop. */
+  private var ratio = Ratio.R4_3
+
+  /** Every recorder here is 16:9, so the ratio button chooses for photos only. */
+  val ratioChoosable: Boolean get() = state.mode !in VIDEO_MODES
+
+  /** The shape of what the next shot shows. The preview is opened in it, so the screen shows what is saved. */
+  val shownRatio: Ratio get() = if (state.mode in VIDEO_MODES) Ratio.R16_9 else ratio
+
+  /** The shape the open camera's streams were picked for. */
+  private var streamRatio = Ratio.R4_3
 
   private val displayListener = object : android.hardware.display.DisplayManager.DisplayListener {
     override fun onDisplayAdded(displayId: Int) = Unit
@@ -367,6 +376,17 @@ class CameraEngine(private val ctx: Context) {
 
   /** RAW replaces the JPEG stream, and the merging modes need JPEG frames: DNG only where one shot is one file. */
   private fun rawWanted(): Boolean = dngOn && state.mode in RAW_MODES
+
+  /** 10-bit video as log at 60 fps instead of HLG at 30. */
+  var logVideo: Boolean
+    get() = prefs.getBoolean("vlog", false)
+    set(v) {
+      if (state.recording) return // a take keeps the curve and the frame rate it began with
+      prefs.edit().putBoolean("vlog", v).apply()
+      refreshPreview()
+    }
+
+  val logActive: Boolean get() = logVideo && state.mode == Mode.HDRVID
 
   var imuRotationOn: Boolean
     get() = prefs.getBoolean("imurot", false)
@@ -562,10 +582,11 @@ class CameraEngine(private val ctx: Context) {
       lensFront = ch.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
       activeArray = ch.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
       val map = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-      previewSize = pickPreviewSize(map?.getOutputSizes(android.graphics.SurfaceTexture::class.java) ?: emptyArray())
-      jpegSize = pickJpegSize(map?.getOutputSizes(ImageFormat.JPEG) ?: emptyArray(), ratio)
+      streamRatio = shownRatio
+      jpegSize = pickJpegSize(map?.getOutputSizes(ImageFormat.JPEG) ?: emptyArray(), streamRatio)
+      // the preview takes the still's shape: the picture on screen is the picture that gets saved
+      previewSize = pickPreviewSize(map?.getOutputSizes(android.graphics.SurfaceTexture::class.java) ?: emptyArray(), jpegSize)
 
-      tv.surfaceTexture?.setDefaultBufferSize(previewSize.width, previewSize.height)
       previewSurface = Surface(tv.surfaceTexture)
       if (rawWanted()) {
         val rawSizes = map?.getOutputSizes(ImageFormat.RAW_SENSOR) ?: emptyArray()
@@ -649,6 +670,18 @@ class CameraEngine(private val ctx: Context) {
     Log.i(TAG, "colour: m1=${colorMatrix1 != null} m2=${colorMatrix2 != null} fwd=${forwardMatrix1 != null} illum=$illuminant1")
   }
 
+  /** The open camera's colour calibration: what a DNG carries, and what manual white balance is worked out with. */
+  private fun rawColor() = DngWriter.RawColor(
+    color1 = colorMatrix1,
+    color2 = colorMatrix2,
+    calib1 = calibTransform1,
+    calib2 = calibTransform2,
+    fwd1 = forwardMatrix1,
+    fwd2 = forwardMatrix2,
+    illum1 = illuminant1,
+    illum2 = illuminant2,
+  )
+
   private fun toDoubles(t: android.hardware.camera2.params.ColorSpaceTransform): DoubleArray {
     val out = DoubleArray(9)
     for (row in 0..2) for (col in 0..2) {
@@ -701,12 +734,35 @@ class CameraEngine(private val ctx: Context) {
     } else {
       b.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
     }
-    if (state.wbMode == CaptureRequest.CONTROL_AWB_MODE_OFF) {
-      b.set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_OFF)
-      b.set(CaptureRequest.COLOR_CORRECTION_MODE, CaptureRequest.COLOR_CORRECTION_MODE_TRANSFORM_MATRIX)
-      b.set(CaptureRequest.COLOR_CORRECTION_GAINS, kelvinGains(kelvin))
-    } else {
+    val calibration = rawColor()
+    val white = WhiteBalance.neutral(kelvin, calibration)
+    val toSrgb = WhiteBalance.toSrgb(kelvin, calibration)
+    if (state.wbMode != CaptureRequest.CONTROL_AWB_MODE_OFF) {
       b.set(CaptureRequest.CONTROL_AWB_MODE, state.wbMode)
+    } else if (white == null || toSrgb == null) {
+      // no calibration to work a colour temperature out with: automatic is the honest picture
+      b.set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO)
+    } else {
+      b.set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_OFF)
+      // the template's own gains are 1 and its matrix the identity: both have to be given, or the picture is green
+      b.set(CaptureRequest.COLOR_CORRECTION_MODE, CaptureRequest.COLOR_CORRECTION_MODE_TRANSFORM_MATRIX)
+      b.set(
+        CaptureRequest.COLOR_CORRECTION_GAINS,
+        android.hardware.camera2.params.RggbChannelVector((1 / white[0]).toFloat(), 1f, 1f, (1 / white[2]).toFloat()),
+      )
+      b.set(
+        CaptureRequest.COLOR_CORRECTION_TRANSFORM,
+        android.hardware.camera2.params.ColorSpaceTransform(
+          Array(9) { android.util.Rational(Math.round(toSrgb[it] * 10000).toInt(), 10000) },
+        ),
+      )
+    }
+    if (logActive) {
+      // takes the place of the HAL's own transfer curve, in the 8-bit preview as in the 10-bit recording:
+      // the screen shows the flat picture the file holds
+      val curve = LogCurve.points()
+      b.set(CaptureRequest.TONEMAP_MODE, CaptureRequest.TONEMAP_MODE_CONTRAST_CURVE)
+      b.set(CaptureRequest.TONEMAP_CURVE, android.hardware.camera2.params.TonemapCurve(curve, curve, curve))
     }
     b.set(CaptureRequest.CONTROL_AE_LOCK, aeLock)
     b.set(CaptureRequest.CONTROL_AWB_LOCK, aeLock)
@@ -725,12 +781,14 @@ class CameraEngine(private val ctx: Context) {
     val tv = textureView ?: return null
     val sensor = activeArray ?: return null
     // The picture on screen is the sensor image turned upright and fitted, so the tap goes back the same way.
-    val (nx, ny) = PreviewGeometry.tapToSensor(
+    val (px, py) = PreviewGeometry.tapToSensor(
       p.x, p.y, tv.width.toFloat(), tv.height.toFloat(), pictureW, pictureH, jpegOrientation(), flipped(),
     ) ?: return null
     // Regions count from the active array's own top-left corner.
     val sw = sensor.width()
     val sh = sensor.height()
+    // a 16:9 or 1:1 preview is only the middle of the sensor
+    val (nx, ny) = PreviewGeometry.streamToSensor(px, py, previewSize.width.toFloat() / previewSize.height, sw.toFloat() / sh)
     val halfW = sw / 10
     val halfH = sh / 10
     val cx = (nx * sw).toInt()
@@ -745,11 +803,21 @@ class CameraEngine(private val ctx: Context) {
     return MeteringRectangle(rect, MeteringRectangle.METERING_WEIGHT_MAX)
   }
 
+  /**
+   * Call before a session is built on the TextureView's surface: the camera sizes the preview stream from that
+   * surface's buffer, and TextureView puts the buffer back to the view's own size whenever it rebuilds its layer
+   * (after Home) or is resized. Measured after Home: the stream came back as 1088x1088 and the picture was stretched.
+   */
+  private fun sizePreviewBuffer() {
+    textureView?.surfaceTexture?.setDefaultBufferSize(previewSize.width, previewSize.height)
+  }
+
   private fun createPreviewSession(cam: CameraDevice) {
     val preview = previewSurface
     val still = reader?.surface ?: rawReader?.surface
     if (preview == null || still == null) return
     try {
+      sizePreviewBuffer()
       val config = android.hardware.camera2.params.SessionConfiguration(
         android.hardware.camera2.params.SessionConfiguration.SESSION_REGULAR,
         listOf(
@@ -791,6 +859,14 @@ class CameraEngine(private val ctx: Context) {
     if (hdrRecorder == null) {
       b.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON)
       videoFps?.let { b.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it) }
+    } else if (logActive) {
+      // the public list of frame rates ends at 30 on every lens: Samsung's own recording keys are what runs the
+      // sensor at 60 (measured: 16.6 ms between frames with them, 33.3 ms with the range alone)
+      b.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(60, 60))
+      for (name in SAMSUNG_RECORDING_FPS) {
+        runCatching { b.set(CaptureRequest.Key(name, Int::class.javaObjectType), 60) }
+          .onFailure { Log.w(TAG, "$name not taken", it) }
+      }
     }
     return b.build()
   }
@@ -848,7 +924,8 @@ class CameraEngine(private val ctx: Context) {
     )
     when {
       taking -> stopRecording() // reopens the camera for the new mode
-      (rawReader != null) != rawWanted() -> openCurrent()
+      // the new mode stores another kind of file or another shape: its streams have to be opened
+      (rawReader != null) != rawWanted() || streamRatio != shownRatio -> openCurrent()
       else -> refreshPreview()
     }
   }
@@ -905,23 +982,10 @@ class CameraEngine(private val ctx: Context) {
     refreshPreview()
   }
 
-  /** Manual white balance: Kelvin -> RGGB gains (Tanner Helland approximation). */
+  /** Manual white balance: the gains and matrix for light of [k] Kelvin, see [WhiteBalance]. */
   fun applyKelvin(k: Int) {
     kelvin = k
     setWb(CaptureRequest.CONTROL_AWB_MODE_OFF)
-  }
-
-  private fun kelvinGains(k: Int): android.hardware.camera2.params.RggbChannelVector {
-    val t = k / 100.0
-    val r = if (t <= 66.0) 255.0 else 329.698727446 * Math.pow(t - 60.0, -0.1332047592)
-    val g = if (t <= 66.0) 99.4708025861 * Math.log(t) - 161.1195681661 else 288.1221695283 * Math.pow(t - 60.0, -0.0755148492)
-    val b = if (t >= 66.0) 255.0 else if (t <= 19.0) 0.0 else 138.5177312231 * Math.log(t - 10.0) - 305.0447927307
-    val rr = r.coerceIn(1.0, 255.0) / 255.0
-    val gg = g.coerceIn(1.0, 255.0) / 255.0
-    val bb = b.coerceIn(1.0, 255.0) / 255.0
-    val gr = (gg / rr).toFloat().coerceIn(0.2f, 5f)
-    val gb = (gg / bb).toFloat().coerceIn(0.2f, 5f)
-    return android.hardware.camera2.params.RggbChannelVector(gr, 1f, 1f, gb)
   }
 
   fun setWb(mode: Int) { prefs.edit().putInt("wb", mode).apply(); state = state.copy(wbMode = mode); refreshPreview() }
@@ -1116,17 +1180,9 @@ class CameraEngine(private val ctx: Context) {
     val white = lastWhite ?: whiteLevel
     val orientation = lastExif()
     val preview = lastPreviewJpeg
-    val color = DngWriter.RawColor(
-      color1 = colorMatrix1,
-      color2 = colorMatrix2,
-      calib1 = calibTransform1,
-      calib2 = calibTransform2,
-      fwd1 = forwardMatrix1,
-      fwd2 = forwardMatrix2,
-      illum1 = illuminant1,
-      illum2 = illuminant2,
-    )
+    val color = rawColor()
     val cfa = cfaPattern
+    val cropAspect = previewSize.width.toFloat() / previewSize.height
     worker.execute {
       try {
         val uri = DngWriter.write(
@@ -1141,6 +1197,7 @@ class CameraEngine(private val ctx: Context) {
           asShotNeutral = neutral,
           previewJpeg = preview,
           color = color,
+          cropAspect = cropAspect,
         )
         handler.post {
           state = state.copy(
@@ -1539,6 +1596,7 @@ class CameraEngine(private val ctx: Context) {
             return
           }
           device = cam
+          sizePreviewBuffer()
           recordTargets = listOfNotNull(preview, recorderSurface)
           val config = android.hardware.camera2.params.SessionConfiguration(
             android.hardware.camera2.params.SessionConfiguration.SESSION_REGULAR,
@@ -1762,7 +1820,20 @@ class CameraEngine(private val ctx: Context) {
     override fun run() {
       if (!hdrDraining) return
       runCatching { hdrRecorder?.drain() }
-      handler.postDelayed(this, 40)
+      handler.postDelayed(this, 16) // one frame at 60 fps
+    }
+  }
+
+  private var logFps = 0
+
+  /** Says the rate the sensor really runs at: the ultrawide stays at 30 whatever is asked of it. */
+  private val logRate = object : CameraCaptureSession.CaptureCallback() {
+    override fun onCaptureCompleted(s: CameraCaptureSession, r: CaptureRequest, result: TotalCaptureResult) {
+      val ns = result.get(CaptureResult.SENSOR_FRAME_DURATION)?.takeIf { it > 0 } ?: return
+      val fps = Math.round(1e9 / ns).toInt()
+      if (fps == logFps || !state.recording) return
+      logFps = fps
+      state = state.copy(status = "merekam log $fps fps")
     }
   }
 
@@ -1774,11 +1845,13 @@ class CameraEngine(private val ctx: Context) {
       val pfd = newTake("_hdr")
       val muxer = android.media.MediaMuxer(pfd.fileDescriptor, android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
       muxer.setOrientationHint(jpegOrientation())
-      val rec = HdrVideoRecorder(1920, 1080, 30, muxer)
+      val log = logActive
+      val rec = HdrVideoRecorder(1920, 1080, if (log) 60 else 30, muxer)
       hdrRecorder = rec // before prepare(): an encoder that fails to start is still released by finishTake()
       val surface = rec.prepare()
       recordTargets = listOf(preview, surface)
 
+      sizePreviewBuffer()
       val previewCfg = android.hardware.camera2.params.OutputConfiguration(preview)
       val videoCfg = android.hardware.camera2.params.OutputConfiguration(surface)
       runCatching {
@@ -1794,19 +1867,22 @@ class CameraEngine(private val ctx: Context) {
             if (device !== cam) return
             session = s
             try {
-              s.setRepeatingRequest(buildRecordRequest(cam), null, handler)
+              logFps = 0
+              s.setRepeatingRequest(buildRecordRequest(cam), logRate.takeIf { log }, handler)
             } catch (t: Throwable) {
               Log.e(TAG, "hdr repeating failed", t)
               return endTake("hdr gagal: " + t.message)
             }
             hdrDraining = true
             handler.post(hdrDrainTick)
-            state = state.copy(recording = true, recordingPaused = false, status = "merekam hdr")
+            state = state.copy(recording = true, recordingPaused = false, status = if (log) "merekam log" else "merekam hdr")
           }
 
           override fun onConfigureFailed(s: CameraCaptureSession) = endTake("sesi hdr gagal")
         },
       )
+      // the recording keys only count when the session is built with them
+      if (log) config.sessionParameters = buildRecordRequest(cam)
       cam.createCaptureSession(config)
       return true
     } catch (t: Throwable) {
@@ -1951,10 +2027,13 @@ class CameraEngine(private val ctx: Context) {
     return Align.toGray(px)
   }
 
-  private fun pickPreviewSize(sizes: Array<Size>): Size {
+  /** The largest stream up to 1920 px in the shape of [like]; a lens without that shape gives its largest one. */
+  private fun pickPreviewSize(sizes: Array<Size>, like: Size): Size {
     if (sizes.isEmpty()) return Size(1920, 1080)
-    return sizes.filter { it.width <= 1920 && it.height <= 1920 }.maxByOrNull { it.width * it.height }
-      ?: sizes.minByOrNull { it.width * it.height }!!
+    val fits = sizes.filter { it.width <= 1920 && it.height <= 1920 }
+    val shape = like.width.toDouble() / like.height
+    return fits.filter { abs(it.width.toDouble() / it.height - shape) < 0.06 }.ifEmpty { fits }
+      .maxByOrNull { it.width * it.height } ?: sizes.minByOrNull { it.width * it.height }!!
   }
 
   private fun pickJpegSize(sizes: Array<Size>, ratio: Ratio): Size {
@@ -1982,5 +2061,10 @@ class CameraEngine(private val ctx: Context) {
     private const val BLUR_STEPS = 4
     private const val MIN_VALID_VIDEO_BYTES = 100_000L
     private val RAW_MODES = setOf(Mode.PHOTO, Mode.PRO)
+    private val VIDEO_MODES = setOf(Mode.VIDEO, Mode.SLOWMO, Mode.HDRVID)
+
+    /** Vendor keys (int32) of Samsung's HAL, in the session parameters and in every request of the take. */
+    private val SAMSUNG_RECORDING_FPS =
+      listOf("samsung.android.control.recordingMaxFps", "samsung.android.control.recordingMinFps")
   }
 }

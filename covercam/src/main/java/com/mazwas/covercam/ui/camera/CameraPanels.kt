@@ -116,8 +116,11 @@ internal fun SettingsPanel(state: CameraUiState, onAction: (CameraAction) -> Uni
       if (state.video60Available) {
         SettingRow("FPS video", if (state.video60) "60" else "30") { onAction(CameraAction.CycleVideoFps) }
       } else {
-        // the lens offers nothing faster: say so instead of a switch that does nothing
-        SettingRow("FPS video", "30 (maks. lensa ini)")
+        // the public list of frame rates offers nothing faster: say so instead of a switch that does nothing
+        SettingRow("FPS video", "30 (maks. mode Video)")
+      }
+      SettingRow("Video 10-bit (HDRV)", if (state.logVideo) "LOG 60 FPS" else "HLG 30 FPS") {
+        onAction(CameraAction.ToggleLogVideo)
       }
       SettingRow("Jeda timelapse", "${state.timelapseIntervalSec}s") { onAction(CameraAction.CycleTimelapseInterval) }
       SettingRow("Kualitas JPEG", state.quality.toString())

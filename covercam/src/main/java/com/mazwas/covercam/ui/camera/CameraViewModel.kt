@@ -120,6 +120,7 @@ class CameraViewModel(private val engine: CameraEngine) : ViewModel() {
       CameraAction.ToggleGeotag -> engine.geotagOn = !engine.geotagOn
       CameraAction.ToggleLevel -> engine.levelOn = !engine.levelOn
       CameraAction.ToggleDng -> engine.dngOn = !engine.dngOn
+      CameraAction.ToggleLogVideo -> engine.logVideo = !engine.logVideo
       CameraAction.ToggleImuRotation -> engine.imuRotationOn = !engine.imuRotationOn
       CameraAction.CycleVideoRes -> engine.cycleVideoRes()
       CameraAction.CycleVideoFps -> engine.cycleVideoFps()
@@ -454,6 +455,7 @@ private fun CameraUiState.merge(engine: CameraEngine): CameraUiState {
     manualFocus = e.manualFocus,
     locked = engine.locked,
     rawActive = engine.rawActive,
+    logActive = engine.logActive,
     lastThumb = e.lastThumb ?: lastThumb,
     zoom = engine.currentZoom(),
     slowPreview = e.slowPreview,
@@ -464,12 +466,14 @@ private fun CameraUiState.merge(engine: CameraEngine): CameraUiState {
     previewScaleX = e.previewScaleX,
     previewScaleY = e.previewScaleY,
     pictureAspect = e.pictureAspect,
-    ratioLabel = engine.ratio.label,
+    ratioLabel = engine.shownRatio.label,
+    ratioChoosable = engine.ratioChoosable,
     quality = engine.quality,
     soundOn = engine.soundOn,
     geotagOn = engine.geotagOn,
     levelOn = engine.levelOn,
     dngOn = engine.dngOn,
+    logVideo = engine.logVideo,
     imuRotationOn = engine.imuRotationOn,
     video4k = engine.video4k,
     video60 = engine.video60,

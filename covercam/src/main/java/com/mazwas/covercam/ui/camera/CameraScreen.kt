@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -107,7 +108,7 @@ internal val MODES = listOf(
   ModeInfo(CameraEngine.Mode.TIMELAPSE, "TLAPSE", "Timelapse", "Foto berkala"),
   ModeInfo(CameraEngine.Mode.SLOWMO, "SLOWMO", "Slow-mo", "Gerak lambat"),
   ModeInfo(CameraEngine.Mode.PANORAMA, "PANO", "Panorama", "3 foto disambung"),
-  ModeInfo(CameraEngine.Mode.HDRVID, "HDRV", "Video HDR", "HLG 10-bit, tanpa suara"),
+  ModeInfo(CameraEngine.Mode.HDRVID, "HDRV", "Video 10-bit", "HLG atau log, tanpa suara"),
 )
 
 /** Modes whose big button starts and stops something instead of taking one picture. */
@@ -133,6 +134,9 @@ private enum class Drawer { None, Zoom, Options }
 
 private val RailMin = 64.dp
 private val RailGap = 8.dp
+
+/** Height of the controls under the picture: the drawer's row (44) over the rail's own (the 64 shutter). */
+private val RailRows = 120.dp
 
 /**
  * Stateless camera screen for the Flip5 cover (748x720 px): renders [state], reports [onAction]. No engine
@@ -175,7 +179,8 @@ private fun Stage(state: CameraUiState, onAction: (CameraAction) -> Unit) {
     // Wider than the picture: the spare room is at the sides. Otherwise it is underneath.
     if (maxWidth / maxHeight > state.pictureAspect) {
       val rail = ((maxWidth - maxHeight * state.pictureAspect) / 2).coerceAtLeast(RailMin)
-      Picture(state, onAction, Modifier.align(Alignment.Center))
+      // a square picture leaves less than a rail on each side: it shrinks rather than go under the controls
+      Picture(state, onAction, Modifier.align(Alignment.Center).padding(horizontal = rail))
       Column(
         Modifier.align(Alignment.CenterStart).width(rail).fillMaxHeight().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(RailGap, Alignment.CenterVertically),
@@ -192,10 +197,12 @@ private fun Stage(state: CameraUiState, onAction: (CameraAction) -> Unit) {
         modifier = Modifier.align(Alignment.CenterEnd).width(rail).fillMaxHeight(),
       )
     } else {
-      val rail = (maxHeight - maxWidth / state.pictureAspect).coerceAtLeast(RailMin + 24.dp)
-      Picture(state, onAction, Modifier.align(Alignment.TopCenter))
+      // The controls keep a band along the bottom and the picture stands on it. A wide picture leaves more black
+      // than the band needs: it then gets as much above it as below, so it sits in the middle, not against the top.
+      val band = maxOf((maxHeight - maxWidth / state.pictureAspect) / 2, RailRows)
+      Picture(state, onAction, Modifier.align(Alignment.BottomCenter).padding(bottom = band))
       Column(
-        Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(rail).padding(horizontal = 12.dp),
+        Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(band).padding(horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(RailGap, Alignment.CenterVertically),
       ) {
         if (drawer != Drawer.None) {
@@ -421,6 +428,7 @@ private fun Badges(state: CameraUiState) {
       else -> {
         if (state.locked) Badge { Label("AE/AF TERKUNCI", color = MaterialTheme.colorScheme.error, small = true) }
         if (state.rawActive) Badge { Label("RAW", color = MaterialTheme.colorScheme.onSurface, small = true) }
+        if (state.logActive) Badge { Label("LOG", color = MaterialTheme.colorScheme.onSurface, small = true) }
         if (state.timerSeconds > 0 && state.countdown == 0) {
           Badge { Label("TIMER ${state.timerSeconds}S", color = MaterialTheme.colorScheme.onSurface, small = true) }
         }
@@ -496,10 +504,11 @@ private fun Histogram(hist: IntArray, modifier: Modifier = Modifier) {
 /** Shown while calibrating from Settings: the preview stays in view, so each tap can be judged. */
 @Composable
 private fun CalibrationBar(onAction: (CameraAction) -> Unit, modifier: Modifier = Modifier) {
-  Row(
+  // a 9:16 picture is too narrow for the three in one line: the last one then drops to a line of its own
+  FlowRow(
     modifier.fillMaxWidth().background(Scrim).swallowTaps().padding(8.dp),
     horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
-    verticalAlignment = Alignment.CenterVertically,
+    verticalArrangement = Arrangement.spacedBy(6.dp),
   ) {
     PillBtn("PUTAR", modifier = Modifier.testTag("rotate")) { onAction(CameraAction.BumpRotation) }
     PillBtn("CERMIN", modifier = Modifier.testTag("mirror")) { onAction(CameraAction.ToggleMirror) }
@@ -587,9 +596,12 @@ private fun DrawerItems(
           onAction(CameraAction.CycleTimer)
         }
       }
-      RoundBtn("Rasio foto ${state.ratioLabel}", text = state.ratioLabel, modifier = Modifier.testTag("ratio")) {
-        onAction(CameraAction.CycleRatio)
-      }
+      RoundBtn(
+        "Rasio ${state.ratioLabel}",
+        text = state.ratioLabel,
+        enabled = state.ratioChoosable,
+        modifier = Modifier.testTag("ratio"),
+      ) { onAction(CameraAction.CycleRatio) }
       RoundBtn("Grid", icon = R.drawable.ic_grid, on = state.grid, modifier = Modifier.testTag("grid")) {
         onAction(CameraAction.SetGrid(!state.grid))
       }
@@ -603,10 +615,11 @@ private fun DrawerItems(
         onDrawer(Drawer.None)
         onAction(CameraAction.OpenSettings)
       }
-      RoundBtn("Tutup opsi", icon = R.drawable.ic_x, modifier = Modifier.testTag("options_close")) {
-        onDrawer(Drawer.None)
-      }
     }
+  }
+  // both drawers end with the way back to the three rail buttons
+  if (drawer != Drawer.None) {
+    RoundBtn("Tutup", icon = R.drawable.ic_x, modifier = Modifier.testTag("drawer_close")) { onDrawer(Drawer.None) }
   }
 }
 
@@ -762,6 +775,18 @@ private fun ProStrip(state: CameraUiState, onAction: (CameraAction) -> Unit, mod
   }
   Column(modifier.fillMaxWidth().background(Scrim).swallowTaps()) {
     open?.let { param ->
+      // a 9:16 picture is 210 dp wide: the five presets fill a row of their own, the Kelvin slider gets the next
+      if (param == ProParam.WB) {
+        Row(
+          Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 10.dp),
+          horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          WB_PRESETS.forEach { (mode, label) ->
+            Chip(label, selected = state.wbMode == mode) { onAction(CameraAction.SetWb(mode)) }
+          }
+        }
+      }
       Row(
         Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -787,13 +812,8 @@ private fun ProStrip(state: CameraUiState, onAction: (CameraAction) -> Unit, mod
               onAction(CameraAction.SetEv(state.evRange.first + (t * span).roundToInt()))
             }
           }
-          ProParam.WB -> {
-            WB_PRESETS.forEach { (mode, label) ->
-              Chip(label, selected = state.wbMode == mode) { onAction(CameraAction.SetWb(mode)) }
-            }
-            ProSlider((state.kelvin - 2500) / 6000f, "White balance Kelvin") { t ->
-              onAction(CameraAction.SetKelvin(2500 + (t * 6000).roundToInt()))
-            }
+          ProParam.WB -> ProSlider((state.kelvin - 2500) / 6000f, "White balance Kelvin") { t ->
+            onAction(CameraAction.SetKelvin(2500 + (t * 6000).roundToInt()))
           }
         }
         // back to automatic, offered only when something is hand-set

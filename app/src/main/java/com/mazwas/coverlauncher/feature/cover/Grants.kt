@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.app.NotificationManager
 import android.content.pm.LauncherApps
 import android.os.Handler
@@ -57,8 +59,14 @@ class Grants(private val context: Context) {
    */
   private fun listAppsOnCover() = thread {
     val key = "multistar_setting_repository"
-    val apps = context.getSystemService(LauncherApps::class.java).getActivityList(null, Process.myUserHandle())
-      .map { it.componentName.packageName }.filter { it != context.packageName }.sorted()
+    val launchable = context.getSystemService(LauncherApps::class.java).getActivityList(null, Process.myUserHandle())
+      .map { it.componentName.packageName }.filter { it != context.packageName }
+    // The package installer has no launcher icon, yet Chrome's APK installs and the drawer's uninstall open it: off the
+    // list, Samsung blocked it ("Launching from CoverLauncher is blocked, ask to open phone", 2026-11-08)
+    val installer = context.packageManager
+      .resolveActivity(Intent(Intent.ACTION_DELETE, Uri.fromParts("package", context.packageName, null)), 0)
+      ?.activityInfo?.packageName
+    val apps = (launchable + listOfNotNull(installer)).distinct().sorted()
     val next = withCoverApps(Shell.output("settings", "get", "secure", key)?.trim(), apps) ?: return@thread
     Shell.output("sh", "-c", "[ -f $MULTISTAR_BACKUP ] || settings get secure $key > $MULTISTAR_BACKUP")
     Shell.exec("settings", "put", "secure", key, next)

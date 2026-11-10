@@ -1,21 +1,22 @@
 package com.mazwas.covercam
 
-import android.Manifest
-import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.enableEdgeToEdge
 import com.mazwas.covercam.ui.camera.CameraAction
 import com.mazwas.covercam.ui.camera.CameraRoot
 import com.mazwas.covercam.ui.camera.CameraViewModel
+import com.mazwas.covercam.ui.theme.CoverCamTheme
 import org.koin.androidx.viewmodel.ext.android.viewModel
 
 /**
- * Thin host: window flags, permissions and hardware keys. Everything else - camera, sensors,
- * state, actions - lives in [CameraViewModel] and the Compose screen.
+ * Thin host: window flags, lifecycle and hardware keys. Everything else - camera, sensors,
+ * state, actions, permissions - lives in [CameraViewModel] and the Compose screen.
  */
 class MainActivity : ComponentActivity() {
 
@@ -23,43 +24,32 @@ class MainActivity : ComponentActivity() {
 
   /** Volume-down = shutter, volume-up = next mode (hardware control, no pixel hunting). */
   override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-    when (keyCode) {
-      KeyEvent.KEYCODE_VOLUME_DOWN -> {
-        viewModel.onAction(CameraAction.Capture)
-        return true
-      }
-      KeyEvent.KEYCODE_VOLUME_UP -> {
-        viewModel.onAction(CameraAction.NextMode)
-        return true
-      }
+    val action = when (keyCode) {
+      KeyEvent.KEYCODE_VOLUME_DOWN -> CameraAction.Capture
+      KeyEvent.KEYCODE_VOLUME_UP -> CameraAction.NextMode
+      else -> return super.onKeyDown(keyCode, event)
     }
-    return super.onKeyDown(keyCode, event)
+    // a held key repeats: it is still one press, not a burst
+    if (event?.repeatCount == 0) viewModel.onAction(action)
+    return true
   }
 
-  private val requestPermissions =
-    registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
-      if (granted[Manifest.permission.CAMERA] == true) viewModel.onAction(CameraAction.ProbeLenses)
-    }
-
   override fun onCreate(savedInstanceState: Bundle?) {
+    // the UI is always dark, so the bars are too
+    enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
     super.onCreate(savedInstanceState)
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-    setContent { CameraRoot() }
-    if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-      viewModel.onAction(CameraAction.ProbeLenses)
-    } else {
-      requestPermissions.launch(
-        arrayOf(
-          Manifest.permission.CAMERA,
-          Manifest.permission.RECORD_AUDIO,
-          Manifest.permission.ACCESS_FINE_LOCATION,
-        ),
-      )
-    }
+    setContent { CoverCamTheme { CameraRoot() } }
   }
 
   override fun onResume() {
     super.onResume()
-    viewModel.onAction(CameraAction.ReopenCamera)
+    viewModel.onAction(CameraAction.ScreenResumed)
+  }
+
+  /** Stopped = not visible: the take is finished and the camera released, instead of dying with the screen. */
+  override fun onStop() {
+    viewModel.onAction(CameraAction.ScreenStopped)
+    super.onStop()
   }
 }

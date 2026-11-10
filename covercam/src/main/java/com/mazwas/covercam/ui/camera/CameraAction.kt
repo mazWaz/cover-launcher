@@ -1,6 +1,5 @@
 package com.mazwas.covercam.ui.camera
 
-import android.net.Uri
 import android.view.Surface
 import android.view.TextureView
 import com.mazwas.covercam.CameraEngine
@@ -11,12 +10,13 @@ sealed interface CameraAction {
   // modes and capture
   data class SetMode(val mode: CameraEngine.Mode) : CameraAction
   data object NextMode : CameraAction
+  data object PrevMode : CameraAction
+  data object OpenModes : CameraAction
+  data object CloseModes : CameraAction
+
+  /** Shutter button, record button and volume-down: a photo in the photo modes, start/stop in the recording ones. */
   data object Capture : CameraAction
-  data object ToggleRecording : CameraAction
-  data object ToggleTimelapse : CameraAction
-  data object ToggleSlowMotion : CameraAction
-  data object ToggleHdrVideo : CameraAction
-  data object StopRecording : CameraAction
+  data object TogglePause : CameraAction
 
   // optics
   data class SelectLens(val delta: Int) : CameraAction
@@ -28,7 +28,7 @@ sealed interface CameraAction {
   data object BumpRotation : CameraAction
   data object ToggleMirror : CameraAction
 
-  // top bar / quick toggles
+  // quick toggles
   data object CycleTimer : CameraAction
   data object CycleRatio : CameraAction
   data class SetGrid(val enabled: Boolean) : CameraAction
@@ -43,6 +43,9 @@ sealed interface CameraAction {
   data class SetWb(val mode: Int) : CameraAction
   data class SetKelvin(val kelvin: Int) : CameraAction
 
+  /** Exposure and focus back to automatic. */
+  data object SetAuto : CameraAction
+
   // settings panel
   data object OpenSettings : CameraAction
   data object CloseSettings : CameraAction
@@ -51,25 +54,32 @@ sealed interface CameraAction {
   data object ToggleGeotag : CameraAction
   data object ToggleLevel : CameraAction
   data object ToggleDng : CameraAction
-  data object CycleDngRotation : CameraAction
   data object ToggleImuRotation : CameraAction
   data object CycleVideoRes : CameraAction
   data object CycleVideoFps : CameraAction
   data object CycleTimelapseInterval : CameraAction
   data object ResetCalibration : CameraAction
 
+  /** Leaves Settings and puts the turn / mirror buttons over the live preview. */
+  data object StartCalibration : CameraAction
+  data object StopCalibration : CameraAction
+
   // gallery / viewer
   data object OpenGallery : CameraAction
   data object CloseGallery : CameraAction
-  data class OpenViewer(val uri: Uri) : CameraAction
+  data class OpenViewer(val item: GalleryItem) : CameraAction
   data object CloseViewer : CameraAction
-  data class DeletePhoto(val uri: Uri) : CameraAction
+  data class DeleteMedia(val item: GalleryItem) : CameraAction
+  data class ShareMedia(val item: GalleryItem) : CameraAction
+  data class PlayMedia(val item: GalleryItem) : CameraAction
+
+  // permission
+  data object RequestPermission : CameraAction
+  data object OpenAppSettings : CameraAction
 
   // wiring that the platform delivers to us (not user intents, but the only seam Compose has)
   data class AttachPreview(val view: TextureView) : CameraAction
   data class AttachSlowPreview(val surface: Surface?) : CameraAction
-  data object ProbeLenses : CameraAction
-  data object ReopenCamera : CameraAction
-  data class SetDeviceRotation(val degrees: Int) : CameraAction
-  data object ClearDeviceRotation : CameraAction
+  data object ScreenResumed : CameraAction
+  data object ScreenStopped : CameraAction
 }

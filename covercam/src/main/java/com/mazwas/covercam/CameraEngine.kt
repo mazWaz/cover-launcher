@@ -8,7 +8,6 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.ImageFormat
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Matrix
 import android.graphics.Rect
@@ -42,8 +41,8 @@ import java.util.Locale
 /**
  * Camera2 engine for the Flip5 cover screen: photo, video and manual (Pro) modes.
  *
- * The package is com.samsung.android.ruler on purpose - Samsung's cameraserver keeps hidden
- * physical devices behind a package allowlist, the same mechanism Samsung GCam mods use.
+ * The package is com.samsung.android.ruler on purpose - Samsung's cameraserver filters the lens
+ * list per package, and this is the name Samsung GCam mods use (see covercam/README.md).
  */
 class CameraEngine(private val ctx: Context) {
 
@@ -71,9 +70,19 @@ class CameraEngine(private val ctx: Context) {
     val ev: Int = 0,
     val evRange: IntRange = 0..0,
     val wbMode: Int = CaptureRequest.CONTROL_AWB_MODE_AUTO,
+    /** Exposure is hand-set (ISO/shutter touched in Pro); false = auto exposure, EV applies. */
     val manual: Boolean = false,
+    /** Focus is hand-set (focus slider touched in Pro); false = continuous autofocus. */
+    val manualFocus: Boolean = false,
     val lastThumb: android.net.Uri? = null,
     val busy: Boolean = false,
+    /** True from the moment a slow-motion take is asked for: the UI mounts its preview surface. */
+    val slowPreview: Boolean = false,
+    /** Scale that undoes TextureView's stretch; overlays drawn over the preview apply the same one. */
+    val previewScaleX: Float = 1f,
+    val previewScaleY: Float = 1f,
+    /** Width / height of the upright picture; the UI gives the preview a box of this shape. */
+    val pictureAspect: Float = 4f / 3f,
   )
 
   /** Exposed so the ViewModel can reach the application context without a second Koin binding. */
@@ -120,7 +129,16 @@ class CameraEngine(private val ctx: Context) {
   private var recorderSurface: Surface? = null
 
   private var sensorOrientation = 90
+  private var lensFront = false
   private var activeArray: Rect? = null
+  private var previewSize = Size(1920, 1440)
+  private var zoomLimits = 1f..8f
+  // The upright picture inside the view, set by applyTransform; taps are mapped through it.
+  private var pictureW = 0f
+  private var pictureH = 0f
+
+  // One worker for saves and merges: two 12 MP merges at once would run out of memory.
+  private val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
 
   private var timelapseRunning = false
   private var capHighSpeed = false
@@ -159,7 +177,7 @@ class CameraEngine(private val ctx: Context) {
     if (timelapseRunning) {
       timelapseRunning = false
       handler.removeCallbacks(timelapseTick)
-      state = state.copy(status = "timelapse stopped")
+      state = state.copy(status = "timelapse berhenti")
     } else {
       timelapseRunning = true
       state = state.copy(status = "timelapse " + timelapseIntervalSec + "s")
@@ -175,6 +193,10 @@ class CameraEngine(private val ctx: Context) {
     get() = prefs.getBoolean("v60", false)
     set(v) = prefs.edit().putBoolean("v60", v).apply()
 
+  /** Whether the open lens can record 1080p at a real 60 fps; the settings row is a plain "30" when it can't. */
+  var video60Available = false
+    private set
+
   fun cycleVideoRes() {
     video4k = !video4k
     state = state.copy(status = if (video4k) "video 4K" else "video 1080p")
@@ -185,16 +207,16 @@ class CameraEngine(private val ctx: Context) {
     state = state.copy(status = if (video60) "video 60fps" else "video 30fps")
   }
 
-  /** Tap the record button while recording to pause/resume. */
+  /** The pause button of a running video take. */
   fun pauseOrResumeRecording() {
     val rec = recorder ?: return
     try {
       if (state.recordingPaused) {
         rec.resume()
-        state = state.copy(recordingPaused = false, status = "recording")
+        state = state.copy(recordingPaused = false, status = "merekam")
       } else {
         rec.pause()
-        state = state.copy(recordingPaused = true, status = "rec paused")
+        state = state.copy(recordingPaused = true, status = "jeda")
       }
     } catch (t: Throwable) {
       Log.w(TAG, "pause/resume failed", t)
@@ -212,6 +234,7 @@ class CameraEngine(private val ctx: Context) {
   private val hdrFrames = ArrayList<ByteArray>()
   private val panoFrames = ArrayList<ByteArray>()
   private var lastJpegRotation = 0
+  private var lastFlip = false
   private var lastAeIso: Int? = null
   private var lastAeExposureNs: Long? = null
   private val aeCallback = object : CameraCaptureSession.CaptureCallback() {
@@ -242,7 +265,16 @@ class CameraEngine(private val ctx: Context) {
   var ratio: Ratio = Ratio.R4_3
     private set
 
+  private val displayListener = object : android.hardware.display.DisplayManager.DisplayListener {
+    override fun onDisplayAdded(displayId: Int) = Unit
+    override fun onDisplayRemoved(displayId: Int) = Unit
+    override fun onDisplayChanged(displayId: Int) = applyTransform()
+  }
+
   init {
+    // The launcher turns the cover display. A half turn changes no view size, so nothing else would tell us.
+    ctx.getSystemService(android.hardware.display.DisplayManager::class.java)
+      .registerDisplayListener(displayListener, handler)
     val savedMode = runCatching { Mode.valueOf(prefs.getString("mode", Mode.PHOTO.name)!!) }
       .getOrDefault(Mode.PHOTO)
     ratio = runCatching { Ratio.valueOf(prefs.getString("ratio", Ratio.R4_3.name)!!) }
@@ -251,7 +283,6 @@ class CameraEngine(private val ctx: Context) {
     zoomRatio = prefs.getFloat("zoom", 1f)
     state = state.copy(
       mode = savedMode,
-      manual = savedMode == Mode.PRO,
       timerSeconds = prefs.getInt("timer", 0),
       wbMode = prefs.getInt("wb", CaptureRequest.CONTROL_AWB_MODE_AUTO),
     )
@@ -260,12 +291,13 @@ class CameraEngine(private val ctx: Context) {
   fun currentZoom(): Float = zoomRatio
 
   /**
-   * 720p surface used only while recording slow motion: a constrained high-speed session
+   * Surface used only while recording slow motion: a constrained high-speed session
    * rejects the 1920x1440 TextureView, but a SurfaceView with a fixed buffer size fits the
-   * published list, so the preview stays live.
+   * published list, so the preview stays live. Its arrival is what starts an armed take.
    */
   fun setSlowPreviewSurface(surface: Surface?) {
     slowPreviewSurface = surface
+    if (surface != null && state.slowPreview && recorder == null) beginSlowMotion()
   }
 
   fun previewRotationDegrees(): Int = previewRotation()
@@ -290,11 +322,17 @@ class CameraEngine(private val ctx: Context) {
 
   /** Called when the activity resumes: the cover panel may have disabled the camera meanwhile. */
   fun reopenIfNeeded() {
-    if (device == null) {
+    if (device == null && !opening) {
       openRetries = 0
       openCurrent()
     }
   }
+
+  /** AE/AF lock (long-press on the preview). It is persisted, so the screen has to show it. */
+  val locked: Boolean get() = aeLock
+
+  /** The next shot is a DNG. */
+  val rawActive: Boolean get() = rawWanted()
 
   /** Current preview frame, used by the histogram and focus-peaking analysers. */
   fun previewBitmap(w: Int, h: Int): android.graphics.Bitmap? =
@@ -324,8 +362,11 @@ class CameraEngine(private val ctx: Context) {
     get() = prefs.getBoolean("dng", false)
     set(v) {
       prefs.edit().putBoolean("dng", v).apply()
-      openCurrent()
+      if ((rawReader != null) != rawWanted()) openCurrent()
     }
+
+  /** RAW replaces the JPEG stream, and the merging modes need JPEG frames: DNG only where one shot is one file. */
+  private fun rawWanted(): Boolean = dngOn && state.mode in RAW_MODES
 
   var imuRotationOn: Boolean
     get() = prefs.getBoolean("imurot", false)
@@ -333,17 +374,6 @@ class CameraEngine(private val ctx: Context) {
       prefs.edit().putBoolean("imurot", v).apply()
       if (!v) clearDeviceRotation()
     }
-
-  var dngRotation: Int
-    get() = prefs.getInt("dngrot", 90)
-    set(v) {
-      prefs.edit().putInt("dngrot", ((v % 360) + 360) % 360).apply()
-    }
-
-  fun cycleDngRotation() {
-    dngRotation = (dngRotation + 90) % 360
-    state = state.copy(status = "dng rot ${dngRotation}deg")
-  }
 
   var levelOn: Boolean
     get() = prefs.getBoolean("level", true)
@@ -353,7 +383,7 @@ class CameraEngine(private val ctx: Context) {
   fun resetCalibration() {
     val edit = prefs.edit()
     prefs.all.keys.filter { it.startsWith("extra_") || it.startsWith("mirror_") }.forEach(edit::remove)
-    edit.remove("dngrot").remove("imuref").apply()
+    edit.remove("imuref").apply()
     imuRotation = -1 // display rotation until the IMU commits a new reference quadrant
     openCurrent()
   }
@@ -376,6 +406,10 @@ class CameraEngine(private val ctx: Context) {
   }
   private var opening = false
   private var openRetries = 0
+  // A lens/ratio change that arrives while the camera is still opening is replayed once it is open.
+  private var reopenQueued = false
+  // Bumped by every open and close: a callback holding an older number belongs to a camera nobody wants any more.
+  private var openToken = 0
 
   // ---------------------------------------------------------------- probing
 
@@ -404,7 +438,7 @@ class CameraEngine(private val ctx: Context) {
     }
     state = state.copy(
       facingBack = back,
-      lenses = activeIds,
+      lenses = activeIds.map(::labelFor),
       lensIndex = 0,
       lensLabel = labelFor(activeIds[0]),
     )
@@ -423,33 +457,53 @@ class CameraEngine(private val ctx: Context) {
   private fun labelFor(id: String): String = when (id) {
     "2", "58" -> "0.5x"
     "0", "56" -> "1.0x"
-    "1", "3", "4" -> "SELF"
     else -> id
   }
 
   // ---------------------------------------------------------------- lifecycle
 
-  fun attach(textureView: TextureView) {
-    this.textureView = textureView
-    val listener = object : TextureView.SurfaceTextureListener {
-      override fun onSurfaceTextureAvailable(st: android.graphics.SurfaceTexture, w: Int, h: Int) = openCurrent()
-      override fun onSurfaceTextureSizeChanged(st: android.graphics.SurfaceTexture, w: Int, h: Int) = Unit
-      override fun onSurfaceTextureDestroyed(st: android.graphics.SurfaceTexture) = true
+  fun attach(view: TextureView) {
+    textureView = view
+    view.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+      override fun onSurfaceTextureAvailable(st: android.graphics.SurfaceTexture, w: Int, h: Int) {
+        textureView = view
+        openCurrent()
+      }
+      override fun onSurfaceTextureSizeChanged(st: android.graphics.SurfaceTexture, w: Int, h: Int) = applyTransform()
+      override fun onSurfaceTextureDestroyed(st: android.graphics.SurfaceTexture): Boolean {
+        close()
+        // the engine outlives the activity: don't keep a dead window's view
+        if (textureView === view) textureView = null
+        return true
+      }
       override fun onSurfaceTextureUpdated(st: android.graphics.SurfaceTexture) = Unit
     }
-    if (textureView.isAvailable) openCurrent() else textureView.surfaceTextureListener = listener
+    if (view.isAvailable) openCurrent()
   }
 
+  /**
+   * The activity stopped or its view went away: finish the take first (a recorder that is only dropped leaves a
+   * file no player opens), then let the camera go.
+   */
   fun close() {
     timelapseRunning = false
     handler.removeCallbacks(timelapseTick)
     opening = false
-    stopRecordingSafe()
+    reopenQueued = false
+    openToken++
+    val saved = finishTake()
     closeDevice()
+    state = state.copy(
+      recording = false,
+      recordingPaused = false,
+      slowPreview = false,
+      busy = false,
+      lastThumb = saved ?: state.lastThumb,
+    )
   }
 
-  /** Closes the camera/reader but keeps the preview Surface alive (video hands it to a new session). */
-  private fun closeDeviceKeepPreview() {
+  /** [keepPreview]: video hands the preview Surface to its own session. */
+  private fun closeDevice(keepPreview: Boolean = false) {
     try { session?.close() } catch (_: Throwable) {}
     session = null
     try { device?.close() } catch (_: Throwable) {}
@@ -458,42 +512,62 @@ class CameraEngine(private val ctx: Context) {
     reader = null
     try { rawReader?.close() } catch (_: Throwable) {}
     rawReader = null
+    if (!keepPreview) {
+      previewSurface?.release()
+      previewSurface = null
+    }
     state = state.copy(ready = false)
   }
 
-  private fun closeDevice() {
-    try { session?.close() } catch (_: Throwable) {}
-    session = null
-    try { device?.close() } catch (_: Throwable) {}
-    device = null
-    try { reader?.close() } catch (_: Throwable) {}
-    reader = null
-    try { rawReader?.close() } catch (_: Throwable) {}
-    rawReader = null
-    previewSurface?.release()
-    previewSurface = null
-    state = state.copy(ready = false)
+  /** The camera went away under us (another app took it): finish the take and wait for the next resume. */
+  private fun cameraLost(status: String) {
+    val saved = finishTake()
+    closeDevice()
+    state = state.copy(
+      recording = false,
+      recordingPaused = false,
+      slowPreview = false,
+      busy = false,
+      lastThumb = saved ?: state.lastThumb,
+      status = status,
+    )
   }
 
   private fun openCurrent() {
     val tv = textureView ?: return
     if (!tv.isAvailable) return
     val id = activeIds.getOrNull(state.lensIndex) ?: return
-    if (opening) return
+    if (opening) {
+      reopenQueued = true
+      return
+    }
     opening = true
     currentId = id
+    focusPoint = null
+    if (recorder != null || hdrRecorder != null || state.slowPreview) {
+      // a lens or ratio change in the middle of a take ends the take
+      handler.removeCallbacks(slowArmTimeout)
+      val saved = finishTake()
+      state = state.copy(
+        recording = false,
+        recordingPaused = false,
+        slowPreview = false,
+        lastThumb = saved ?: state.lastThumb,
+      )
+    }
     closeDevice()
     try {
       val ch = manager.getCameraCharacteristics(id)
       sensorOrientation = ch.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+      lensFront = ch.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
       activeArray = ch.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
       val map = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-      val previewSize = pickPreviewSize(map?.getOutputSizes(android.graphics.SurfaceTexture::class.java) ?: emptyArray())
+      previewSize = pickPreviewSize(map?.getOutputSizes(android.graphics.SurfaceTexture::class.java) ?: emptyArray())
       jpegSize = pickJpegSize(map?.getOutputSizes(ImageFormat.JPEG) ?: emptyArray(), ratio)
 
       tv.surfaceTexture?.setDefaultBufferSize(previewSize.width, previewSize.height)
       previewSurface = Surface(tv.surfaceTexture)
-      if (dngOn) {
+      if (rawWanted()) {
         val rawSizes = map?.getOutputSizes(ImageFormat.RAW_SENSOR) ?: emptyArray()
         rawSize = rawSizes.maxByOrNull { it.width.toLong() * it.height } ?: jpegSize
         ch.get(CameraCharacteristics.SENSOR_INFO_WHITE_LEVEL)?.let { whiteLevel = it }
@@ -507,22 +581,39 @@ class CameraEngine(private val ctx: Context) {
         }
       }
 
+      video60Available = canRun60(ch, map, Size(1920, 1080))
       readColorCalibration(ch)
       probeHighSpeed(ch)
       applyCharacteristicRanges(ch)
       Log.i(TAG, "open id=$id sensor=$sensorOrientation extra=${extraFor(id)} mirror=${mirrorFor(id)}")
 
+      val token = ++openToken
       manager.openCamera(id, object : CameraDevice.StateCallback() {
         override fun onOpened(cam: CameraDevice) {
           opening = false
+          if (token != openToken || reopenQueued) {
+            // closed meanwhile, or another lens/ratio was asked for while this one was opening
+            cam.close()
+            if (reopenQueued) {
+              reopenQueued = false
+              openCurrent()
+            }
+            return
+          }
           openRetries = 0
           device = cam
           createPreviewSession(cam)
         }
-        override fun onDisconnected(cam: CameraDevice) { cam.close(); device = null }
+        override fun onDisconnected(cam: CameraDevice) {
+          opening = false
+          cam.close()
+          if (token == openToken) cameraLost("kamera dipakai aplikasi lain")
+        }
         override fun onError(cam: CameraDevice, error: Int) {
           opening = false
-          cam.close(); device = null
+          cam.close()
+          if (token != openToken) return
+          cameraLost("camera error $error")
           if (openRetries < 3) {
             openRetries++
             handler.postDelayed({ openCurrent() }, 900L * openRetries)
@@ -545,14 +636,15 @@ class CameraEngine(private val ctx: Context) {
     capDepth = caps.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_DEPTH_OUTPUT)
     val hsSizes = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)?.highSpeedVideoSizes
     capHighSpeed = capHighSpeed || (hsSizes != null && hsSizes.isNotEmpty())
-    capVideoHdr = false
+    capVideoHdr = ch.get(CameraCharacteristics.REQUEST_AVAILABLE_DYNAMIC_RANGE_PROFILES)
+      ?.supportedProfiles?.contains(android.hardware.camera2.params.DynamicRangeProfiles.HLG10) == true
     colorMatrix1 = ch.get(CameraCharacteristics.SENSOR_COLOR_TRANSFORM1)?.let { toDoubles(it) }
     colorMatrix2 = ch.get(CameraCharacteristics.SENSOR_COLOR_TRANSFORM2)?.let { toDoubles(it) }
     calibTransform1 = ch.get(CameraCharacteristics.SENSOR_CALIBRATION_TRANSFORM1)?.let { toDoubles(it) }
     calibTransform2 = ch.get(CameraCharacteristics.SENSOR_CALIBRATION_TRANSFORM2)?.let { toDoubles(it) }
     forwardMatrix1 = ch.get(CameraCharacteristics.SENSOR_FORWARD_MATRIX1)?.let { toDoubles(it) }
     forwardMatrix2 = ch.get(CameraCharacteristics.SENSOR_FORWARD_MATRIX2)?.let { toDoubles(it) }
-    ch.get(CameraCharacteristics.SENSOR_REFERENCE_ILLUMINANT1)?.let { illuminant1 = it.toInt() }
+    ch.get(CameraCharacteristics.SENSOR_REFERENCE_ILLUMINANT1)?.let { illuminant1 = it }
     ch.get(CameraCharacteristics.SENSOR_REFERENCE_ILLUMINANT2)?.let { illuminant2 = it.toInt() }
     Log.i(TAG, "colour: m1=${colorMatrix1 != null} m2=${colorMatrix2 != null} fwd=${forwardMatrix1 != null} illum=$illuminant1")
   }
@@ -576,9 +668,9 @@ class CameraEngine(private val ctx: Context) {
       exposureRange = expRange?.let { it.lower..it.upper } ?: 1_000_000L..1_000_000_000L,
       evRange = evRange?.let { it.lower..it.upper } ?: 0..0,
       minFocus = minFocus,
-      status = "id=$currentId rot=${previewRotation()} mirror=${mirrorFor(currentId)}",
     )
-    if (zoomRange != null) zoomRatio = zoomRatio.coerceIn(zoomRange.lower, zoomRange.upper)
+    zoomLimits = (zoomRange?.lower ?: 1f)..(zoomRange?.upper ?: 8f).coerceIn(1f, 8f)
+    zoomRatio = zoomRatio.coerceIn(zoomLimits.start, zoomLimits.endInclusive)
   }
 
   // ---------------------------------------------------------------- requests
@@ -591,22 +683,23 @@ class CameraEngine(private val ctx: Context) {
   }
 
   private fun applyCommon(b: CaptureRequest.Builder) {
+    // CONTROL_MODE stays AUTO: OFF switches off every android.control.* setting, white balance presets included.
+    b.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
     if (state.manual) {
-      b.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_OFF)
       b.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
       b.set(CaptureRequest.SENSOR_SENSITIVITY, state.iso)
       b.set(CaptureRequest.SENSOR_EXPOSURE_TIME, state.exposureNs)
-      if (state.minFocus > 0f) {
-        b.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
-        b.set(CaptureRequest.LENS_FOCUS_DISTANCE, state.focusDiopters)
-      }
     } else {
-      b.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
       b.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
-      b.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
       if (state.evRange.last > state.evRange.first) {
         b.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, state.ev)
       }
+    }
+    if (state.manualFocus && state.minFocus > 0f) {
+      b.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
+      b.set(CaptureRequest.LENS_FOCUS_DISTANCE, state.focusDiopters)
+    } else {
+      b.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
     }
     if (state.wbMode == CaptureRequest.CONTROL_AWB_MODE_OFF) {
       b.set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_OFF)
@@ -630,24 +723,23 @@ class CameraEngine(private val ctx: Context) {
 
   private fun meteringRectFor(p: android.graphics.PointF): MeteringRectangle? {
     val tv = textureView ?: return null
-    val w = tv.width.toFloat()
-    val h = tv.height.toFloat()
-    if (w <= 0f || h <= 0f) return null
-    // Meter against the sensor's real active array, not an assumed 2000x2000 grid.
-    val sensor = activeArray
-    val sw = (sensor?.width() ?: 2000).toFloat()
-    val sh = (sensor?.height() ?: 2000).toFloat()
-    val ox = (sensor?.left ?: 0).toInt()
-    val oy = (sensor?.top ?: 0).toInt()
-    val halfW = (sw * 0.1f).toInt()
-    val halfH = (sh * 0.1f).toInt()
-    val cx = ox + (p.x / w * sw).toInt()
-    val cy = oy + (p.y / h * sh).toInt()
+    val sensor = activeArray ?: return null
+    // The picture on screen is the sensor image turned upright and fitted, so the tap goes back the same way.
+    val (nx, ny) = PreviewGeometry.tapToSensor(
+      p.x, p.y, tv.width.toFloat(), tv.height.toFloat(), pictureW, pictureH, jpegOrientation(), flipped(),
+    ) ?: return null
+    // Regions count from the active array's own top-left corner.
+    val sw = sensor.width()
+    val sh = sensor.height()
+    val halfW = sw / 10
+    val halfH = sh / 10
+    val cx = (nx * sw).toInt()
+    val cy = (ny * sh).toInt()
     val rect = Rect(
-      (cx - halfW).coerceIn(ox, ox + sw.toInt()),
-      (cy - halfH).coerceIn(oy, oy + sh.toInt()),
-      (cx + halfW).coerceIn(ox, ox + sw.toInt()),
-      (cy + halfH).coerceIn(oy, oy + sh.toInt()),
+      (cx - halfW).coerceIn(0, sw - 1),
+      (cy - halfH).coerceIn(0, sh - 1),
+      (cx + halfW).coerceIn(0, sw - 1),
+      (cy + halfH).coerceIn(0, sh - 1),
     )
     if (rect.width() <= 0 || rect.height() <= 0) return null
     return MeteringRectangle(rect, MeteringRectangle.METERING_WEIGHT_MAX)
@@ -667,15 +759,13 @@ class CameraEngine(private val ctx: Context) {
         java.util.concurrent.Executor { r -> handler.post(r) },
         object : CameraCaptureSession.StateCallback() {
         override fun onConfigured(s: CameraCaptureSession) {
+          if (device !== cam) return // closed while the session was being set up
           session = s
           try { s.setRepeatingRequest(buildPreviewRequest(cam), aeCallback, handler) } catch (t: Throwable) {
             Log.w(TAG, "repeating failed", t)
           }
           applyTransform()
-          state = state.copy(
-            ready = true,
-            status = "id=$currentId rot=${previewRotation()} mirror=${mirrorFor(currentId)}",
-          )
+          state = state.copy(ready = true)
         }
         override fun onConfigureFailed(s: CameraCaptureSession) {
           state = state.copy(status = "session config failed")
@@ -689,19 +779,32 @@ class CameraEngine(private val ctx: Context) {
     }
   }
 
+  /** Surfaces of the running take (preview + encoder), so a zoom or focus change keeps feeding the encoder. */
+  private var recordTargets: List<Surface> = emptyList()
+  private var videoFps: Range<Int>? = null
+
+  private fun buildRecordRequest(cam: CameraDevice): CaptureRequest {
+    val b = cam.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
+    recordTargets.forEach { b.addTarget(it) }
+    applyCommon(b)
+    // HDR (HLG10) keeps the request it was verified with: no stabilisation, the template's own frame rate.
+    if (hdrRecorder == null) {
+      b.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON)
+      videoFps?.let { b.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it) }
+    }
+    return b.build()
+  }
+
   fun refreshPreview() {
     val cam = device ?: return
     val s = session ?: return
     try {
-      if (state.recording) {
-        val b = cam.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
-        previewSurface?.let { b.addTarget(it) }
-        recorderSurface?.let { b.addTarget(it) }
-        applyCommon(b)
-        b.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON)
-        s.setRepeatingRequest(b.build(), null, handler)
-      } else {
-        s.setRepeatingRequest(buildPreviewRequest(cam), null, handler)
+      when {
+        // a high-speed burst can't be swapped mid-take; zoom and focus wait for the next session
+        s is android.hardware.camera2.CameraConstrainedHighSpeedCaptureSession -> Unit
+        state.recording -> s.setRepeatingRequest(buildRecordRequest(cam), null, handler)
+        // aeCallback again: without it the last metered ISO/shutter/white balance go stale after the first refresh
+        else -> s.setRepeatingRequest(buildPreviewRequest(cam), aeCallback, handler)
       }
       applyTransform()
     } catch (t: Throwable) {
@@ -719,46 +822,93 @@ class CameraEngine(private val ctx: Context) {
     state = state.copy(timerSeconds = next)
   }
 
-  fun cycleMode() {
+  /** One mode forward (a swipe to the left, volume-up) or back. */
+  fun cycleMode(step: Int = 1) {
     val all = Mode.entries
-    setMode(all[(state.mode.ordinal + 1) % all.size])
+    setMode(all[((state.mode.ordinal + step) % all.size + all.size) % all.size])
   }
 
   fun setMode(mode: Mode) {
-    if (state.recording) stopRecording()
-    if (mode == Mode.PRO && !state.manual) {
-      // Start manual mode from whatever auto exposure had settled on, so the preview
-      // does not jump to a dark frame the moment Pro is opened.
-      val iso = lastAeIso?.coerceIn(state.isoRange.first, state.isoRange.last) ?: state.iso
-      val exp = lastAeExposureNs?.coerceIn(state.exposureRange.first, state.exposureRange.last) ?: state.exposureNs
-      state = state.copy(iso = iso, exposureNs = exp)
-    }
+    if (mode == state.mode) return
+    val taking = state.recording || state.slowPreview
+    if (timelapseRunning) toggleTimelapse()
+    // frames of a half-done burst or panorama belong to the mode they were shot in
+    nightFrames.clear()
+    hdrFrames.clear()
+    panoFrames.clear()
     prefs.edit().putString("mode", mode.name).apply()
     Log.i(TAG, "mode=" + mode.name)
-    state = state.copy(mode = mode, manual = mode == Mode.PRO)
-    refreshPreview()
+    // Every mode starts on auto; Pro goes manual when its ISO, shutter or focus is first touched.
+    state = state.copy(
+      mode = mode,
+      manual = false,
+      manualFocus = false,
+      ev = if (mode == Mode.PRO) state.ev else 0,
+      busy = false,
+    )
+    when {
+      taking -> stopRecording() // reopens the camera for the new mode
+      (rawReader != null) != rawWanted() -> openCurrent()
+      else -> refreshPreview()
+    }
   }
 
   fun setZoom(value: Float) {
-    zoomRatio = value.coerceIn(1.0f, 8.0f)
+    zoomRatio = value.coerceIn(zoomLimits.start, zoomLimits.endInclusive)
     prefs.edit().putFloat("zoom", zoomRatio).apply()
     refreshPreview()
   }
 
+  /** Tap on the preview: meter and focus there; a hand-set focus goes back to autofocus. */
   fun tapFocus(x: Float, y: Float) {
     focusPoint = android.graphics.PointF(x, y)
+    state = state.copy(manualFocus = false)
     refreshPreview()
   }
 
-  fun setIso(v: Int) { state = state.copy(iso = v.coerceIn(state.isoRange.first, state.isoRange.last)); refreshPreview() }
-  fun setExposure(ns: Long) { state = state.copy(exposureNs = ns.coerceIn(state.exposureRange.first, state.exposureRange.last)); refreshPreview() }
-  fun setFocus(d: Float) { state = state.copy(focusDiopters = d.coerceIn(0f, state.minFocus)); refreshPreview() }
-  fun setEv(v: Int) { state = state.copy(ev = v.coerceIn(state.evRange.first, state.evRange.last)); refreshPreview() }
+  /** First touch of ISO or shutter: start from what auto exposure had settled on, so the picture doesn't jump. */
+  private fun enterManual() {
+    if (state.manual) return
+    state = state.copy(
+      manual = true,
+      iso = (lastAeIso ?: state.iso).coerceIn(state.isoRange.first, state.isoRange.last),
+      exposureNs = (lastAeExposureNs ?: state.exposureNs).coerceIn(state.exposureRange.first, state.exposureRange.last),
+    )
+  }
+
+  fun setIso(v: Int) {
+    enterManual()
+    state = state.copy(iso = v.coerceIn(state.isoRange.first, state.isoRange.last))
+    refreshPreview()
+  }
+
+  fun setExposure(ns: Long) {
+    enterManual()
+    state = state.copy(exposureNs = ns.coerceIn(state.exposureRange.first, state.exposureRange.last))
+    refreshPreview()
+  }
+
+  fun setFocus(d: Float) {
+    state = state.copy(manualFocus = true, focusDiopters = d.coerceIn(0f, state.minFocus))
+    refreshPreview()
+  }
+
+  /** Compensation only means something to auto exposure, so touching it hands exposure back to the camera. */
+  fun setEv(v: Int) {
+    state = state.copy(manual = false, ev = v.coerceIn(state.evRange.first, state.evRange.last))
+    refreshPreview()
+  }
+
+  /** Hands exposure and focus back to the camera. */
+  fun setAuto() {
+    state = state.copy(manual = false, manualFocus = false)
+    refreshPreview()
+  }
+
   /** Manual white balance: Kelvin -> RGGB gains (Tanner Helland approximation). */
   fun applyKelvin(k: Int) {
     kelvin = k
-    state = state.copy(wbMode = CaptureRequest.CONTROL_AWB_MODE_OFF)
-    refreshPreview()
+    setWb(CaptureRequest.CONTROL_AWB_MODE_OFF)
   }
 
   private fun kelvinGains(k: Int): android.hardware.camera2.params.RggbChannelVector {
@@ -779,10 +929,25 @@ class CameraEngine(private val ctx: Context) {
   // ---------------------------------------------------------------- photo
 
   fun capture() {
+    // a second burst on top of a running one would mix their frames
+    if (state.busy || state.recording) return
     when (state.mode) {
       Mode.NIGHT -> captureBurst()
       Mode.HDR -> captureHdr()
       else -> captureSingle()
+    }
+  }
+
+  /** A frame the HAL dropped never reaches the reader: without this the shutter would stay "busy" for good. */
+  private val stillCallback = object : CameraCaptureSession.CaptureCallback() {
+    override fun onCaptureFailed(
+      session: CameraCaptureSession,
+      request: CaptureRequest,
+      failure: android.hardware.camera2.CaptureFailure,
+    ) {
+      nightFrames.clear()
+      hdrFrames.clear()
+      state = state.copy(busy = false, status = "pengambilan gagal")
     }
   }
 
@@ -803,13 +968,14 @@ class CameraEngine(private val ctx: Context) {
   private fun captureSingle() {
     val cam = device ?: return
     val s = session ?: return
-    if (dngOn) {
-      val rr = rawReader ?: return
+    val rr = rawReader
+    if (rr != null) {
       try {
         val b = cam.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
         b.addTarget(rr.surface)
         applyCommon(b)
         lastJpegRotation = jpegOrientation()
+        lastFlip = flipped()
         s.capture(b.build(), object : CameraCaptureSession.CaptureCallback() {
           override fun onCaptureCompleted(
             session: CameraCaptureSession,
@@ -819,6 +985,14 @@ class CameraEngine(private val ctx: Context) {
             lastGains = result.get(CaptureResult.COLOR_CORRECTION_GAINS)
             lastBlack = result.get(CaptureResult.SENSOR_DYNAMIC_BLACK_LEVEL)
             lastWhite = result.get(CaptureResult.SENSOR_DYNAMIC_WHITE_LEVEL)
+          }
+
+          override fun onCaptureFailed(
+            session: CameraCaptureSession,
+            request: CaptureRequest,
+            failure: android.hardware.camera2.CaptureFailure,
+          ) {
+            state = state.copy(busy = false, status = "dng gagal")
           }
         }, handler)
         state = state.copy(busy = true, status = "dng…")
@@ -834,13 +1008,10 @@ class CameraEngine(private val ctx: Context) {
       b.addTarget(r.surface)
       applyCommon(b)
       lastJpegRotation = jpegOrientation()
+      lastFlip = flipped()
       b.set(CaptureRequest.JPEG_ORIENTATION, lastJpegRotation)
       applyStillExtras(b)
-      s.capture(b.build(), object : CameraCaptureSession.CaptureCallback() {
-        override fun onCaptureCompleted(s2: CameraCaptureSession, req: CaptureRequest, res: TotalCaptureResult) {
-          state = state.copy(status = "saved")
-        }
-      }, handler)
+      s.capture(b.build(), stillCallback, handler)
     } catch (t: Throwable) {
       Log.e(TAG, "capture failed", t)
       state = state.copy(status = "capture failed: ${t.message}")
@@ -859,11 +1030,12 @@ class CameraEngine(private val ctx: Context) {
         b.addTarget(r.surface)
         applyCommon(b)
         lastJpegRotation = jpegOrientation()
+        lastFlip = flipped()
         b.set(CaptureRequest.JPEG_ORIENTATION, lastJpegRotation)
         applyStillExtras(b)
-        s.capture(b.build(), null, handler)
+        s.capture(b.build(), stillCallback, handler)
       }
-      state = state.copy(busy = true, status = "night: $NIGHT_FRAMES frames")
+      state = state.copy(busy = true, status = "night: $NIGHT_FRAMES frame")
     } catch (t: Throwable) {
       Log.e(TAG, "burst failed", t)
       state = state.copy(status = "burst failed: ${t.message}")
@@ -881,7 +1053,8 @@ class CameraEngine(private val ctx: Context) {
           if (nightFrames.size >= NIGHT_FRAMES) {
             val frames = ArrayList(nightFrames)
             nightFrames.clear()
-            Thread { saveBytes(processFullRes(frames, night = true), "night", lastJpegRotation) }.start()
+            val exif = lastExif()
+            worker.execute { saveBytes(processFullRes(frames, night = true), "night", exif) }
           }
         }
         Mode.HDR -> {
@@ -889,21 +1062,32 @@ class CameraEngine(private val ctx: Context) {
           if (hdrFrames.size >= HDR_FRAMES) {
             val fr = ArrayList(hdrFrames)
             hdrFrames.clear()
-            Thread { saveBytes(processFullRes(fr, night = false), "hdr", lastJpegRotation) }.start()
+            val exif = lastExif()
+            worker.execute { saveBytes(processFullRes(fr, night = false), "hdr", exif) }
           }
         }
-        Mode.PORTRAIT -> Thread { saveBytes(blurBackground(bytes), "portrait", lastJpegRotation) }.start()
+        Mode.PORTRAIT -> {
+          val exif = lastExif()
+          state = state.copy(busy = true)
+          worker.execute { saveBytes(blurBackground(bytes), "bokeh", exif) }
+        }
         Mode.PANORAMA -> {
           panoFrames.add(bytes)
           val count = panoFrames.size
-          handler.post { state = state.copy(status = "pano $count/$PANO_TARGET") }
+          state = state.copy(status = "pano $count/$PANO_TARGET")
           if (count >= PANO_TARGET) {
             val frames = ArrayList(panoFrames)
             panoFrames.clear()
-            Thread { saveBytes(stitchPanorama(frames), "panorama", lastJpegRotation) }.start()
+            val exif = lastExif()
+            state = state.copy(busy = true)
+            worker.execute { saveBytes(stitchPanorama(frames), "panorama", exif) }
           }
         }
-        else -> Thread { saveBytes(bytes, "photo") }.start()
+        else -> {
+          // the HAL already wrote the turn; only a flip needs the tag rewritten
+          val exif = if (lastFlip) lastExif() else null
+          worker.execute { saveBytes(bytes, "foto", exif) }
+        }
       }
     } catch (t: Throwable) {
       Log.e(TAG, "jpeg failed", t)
@@ -915,55 +1099,62 @@ class CameraEngine(private val ctx: Context) {
 
   private fun onRaw(ir: ImageReader) {
     val image = ir.acquireNextImage() ?: return
-    try {
-      val make = android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() }
-      val model = android.os.Build.MODEL
-      val gains = lastGains
-      val neutral = if (gains != null && gains.greenEven > 0f && gains.red > 0f && gains.blue > 0f) {
-        doubleArrayOf(
-          (gains.greenEven / gains.red).toDouble(),
-          1.0,
-          (gains.greenEven / gains.blue).toDouble(),
-        )
-      } else {
-        doubleArrayOf(1.0, 1.0, 1.0)
-      }
-      val black = lastBlack?.let { b -> (b.sum() / b.size).toInt() } ?: blackLevel
-      val white = lastWhite ?: whiteLevel
-      val uri = DngWriter.write(
-        ctx = ctx,
-        image = image,
-        make = make,
-        model = model,
-        blackLevel = black,
-        whiteLevel = white,
-        cfa = cfaPattern,
-        orientationDegrees = dngRotation,
-        asShotNeutral = neutral,
-        previewJpeg = lastPreviewJpeg,
-        color = DngWriter.RawColor(
-          color1 = colorMatrix1,
-          color2 = colorMatrix2,
-          calib1 = calibTransform1,
-          calib2 = calibTransform2,
-          fwd1 = forwardMatrix1,
-          fwd2 = forwardMatrix2,
-          illum1 = illuminant1,
-          illum2 = illuminant2,
-        ),
+    // The shot's metadata is read here, on the camera thread; the 24 MB file is written on the worker.
+    val make = android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() }
+    val model = android.os.Build.MODEL
+    val gains = lastGains
+    val neutral = if (gains != null && gains.greenEven > 0f && gains.red > 0f && gains.blue > 0f) {
+      doubleArrayOf(
+        (gains.greenEven / gains.red).toDouble(),
+        1.0,
+        (gains.greenEven / gains.blue).toDouble(),
       )
-      handler.post {
-        state = state.copy(
-          busy = false,
-          lastThumb = uri ?: state.lastThumb,
-          status = if (uri != null) "dng saved" else "dng failed",
+    } else {
+      doubleArrayOf(1.0, 1.0, 1.0)
+    }
+    val black = lastBlack?.let { b -> (b.sum() / b.size).toInt() } ?: blackLevel
+    val white = lastWhite ?: whiteLevel
+    val orientation = lastExif()
+    val preview = lastPreviewJpeg
+    val color = DngWriter.RawColor(
+      color1 = colorMatrix1,
+      color2 = colorMatrix2,
+      calib1 = calibTransform1,
+      calib2 = calibTransform2,
+      fwd1 = forwardMatrix1,
+      fwd2 = forwardMatrix2,
+      illum1 = illuminant1,
+      illum2 = illuminant2,
+    )
+    val cfa = cfaPattern
+    worker.execute {
+      try {
+        val uri = DngWriter.write(
+          ctx = ctx,
+          image = image,
+          make = make,
+          model = model,
+          blackLevel = black,
+          whiteLevel = white,
+          cfa = cfa,
+          orientation = orientation,
+          asShotNeutral = neutral,
+          previewJpeg = preview,
+          color = color,
         )
+        handler.post {
+          state = state.copy(
+            busy = false,
+            lastThumb = uri ?: state.lastThumb,
+            status = if (uri != null) "dng tersimpan" else "dng gagal",
+          )
+        }
+      } catch (t: Throwable) {
+        Log.e(TAG, "dng write failed", t)
+        handler.post { state = state.copy(busy = false, status = "dng gagal: ${t.message}") }
+      } finally {
+        image.close()
       }
-    } catch (t: Throwable) {
-      Log.e(TAG, "dng write failed", t)
-      handler.post { state = state.copy(busy = false, status = "dng failed: ${t.message}") }
-    } finally {
-      image.close()
     }
   }
 
@@ -1025,7 +1216,8 @@ class CameraEngine(private val ctx: Context) {
   private fun bestOverlap(a: IntArray, b: IntArray, w: Int, h: Int): Int =
     Align.bestOverlap(a, b, w, h)
 
-  private fun saveBytes(bytes: ByteArray, kind: String, exifDegrees: Int? = null) {
+  /** [exif]: EXIF orientation to stamp on the file; null keeps what the HAL wrote. */
+  private fun saveBytes(bytes: ByteArray, kind: String, exif: Int?) {
     try {
       val name = "COVERCAM_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".jpg"
       val values = ContentValues().apply {
@@ -1035,13 +1227,13 @@ class CameraEngine(private val ctx: Context) {
       }
       val uri = ctx.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
       uri?.let { ctx.contentResolver.openOutputStream(it)?.use { os -> os.write(bytes) } }
-      if (uri != null && exifDegrees != null) writeExifOrientation(uri, exifDegrees)
+      if (uri != null && exif != null) writeExifOrientation(uri, exif)
       handler.post {
-        state = state.copy(lastSaved = name, lastThumb = uri, busy = false, status = "$kind saved")
+        state = state.copy(lastSaved = name, lastThumb = uri ?: state.lastThumb, busy = false, status = "$kind tersimpan")
       }
     } catch (t: Throwable) {
       Log.e(TAG, "save failed", t)
-      handler.post { state = state.copy(busy = false, status = "save failed: ${t.message}") }
+      handler.post { state = state.copy(busy = false, status = "gagal menyimpan: ${t.message}") }
     }
   }
 
@@ -1050,56 +1242,61 @@ class CameraEngine(private val ctx: Context) {
    * horizontal strips with BitmapRegionDecoder, so a 12 MP x 5-frame merge stays inside
    * a few tens of MB instead of hundreds.
    *
+   * A night burst is hand-held, so each frame is first lined up with the first one. An HDR bracket is not:
+   * its frames differ in brightness, which a difference search can't match.
+   *
    * The byte[] overload is deprecated in favour of the ByteBuffer one, but our frames are plain
    * in-memory JPEG bytes (not direct buffers), so the simple overload stays; suppress on the
    * function because an annotation inside the lambda body is not a valid expression position.
    */
   @Suppress("DEPRECATION")
   private fun processFullRes(frames: List<ByteArray>, night: Boolean): ByteArray {
-    val decoders = frames.mapNotNull {
+    val decoders = frames.map {
       runCatching { android.graphics.BitmapRegionDecoder.newInstance(it, 0, it.size, false) }.getOrNull()
     }
-    if (decoders.isEmpty()) return frames.first()
-    val w = decoders[0].width
-    val h = decoders[0].height
+    val first = decoders.firstOrNull { it != null } ?: return frames.first()
+    val w = first.width
+    val h = first.height
     if (w <= 0 || h <= 0) return frames.first()
+    val moves = if (night) nightMoves(frames) else List(frames.size) { 0 to 0 }
+    if (night) Log.i(TAG, "night moves=$moves")
 
     val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
     val tileH = 256
     val rect = Rect()
+    val px = IntArray(w * tileH)
+    val accR = DoubleArray(w * tileH)
+    val accG = DoubleArray(w * tileH)
+    val accB = DoubleArray(w * tileH)
+    val accW = DoubleArray(w * tileH)
+    val strip = IntArray(w * tileH)
     var y0 = 0
     while (y0 < h) {
       val th = minOf(tileH, h - y0)
       val n = w * th
-      val accR = DoubleArray(n)
-      val accG = DoubleArray(n)
-      val accB = DoubleArray(n)
-      val accW = DoubleArray(n)
+      accR.fill(0.0)
+      accG.fill(0.0)
+      accB.fill(0.0)
+      accW.fill(0.0)
       var used = 0
-      for (d in decoders) {
-        rect.set(0, y0, w, y0 + th)
-        val bmp = runCatching { d.decodeRegion(rect, BitmapFactory.Options()) }.getOrNull() ?: continue
-        val px = IntArray(n)
-        bmp.getPixels(px, 0, w, 0, 0, w, th)
-        bmp.recycle()
-        used++
-        for (i in 0 until n) {
-          val c = px[i]
-          val r = (c shr 16) and 0xFF
-          val g = (c shr 8) and 0xFF
-          val b = c and 0xFF
-          val wt = if (night) 1.0 else {
-            val lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
-            Math.exp(-((lum - 0.5) * (lum - 0.5)) / 0.08).coerceAtLeast(0.02)
-          }
-          accR[i] += r * wt
-          accG[i] += g * wt
-          accB[i] += b * wt
-          accW[i] += wt
+      decoders.forEachIndexed { k, d ->
+        if (d == null || d.width != w || d.height != h) return@forEachIndexed
+        val (moveX, moveY) = moves[k]
+        // the rows of this frame that land on the strip once the frame is moved into place
+        val top = (y0 - moveY).coerceIn(0, h)
+        val bottom = (y0 + th - moveY).coerceIn(0, h)
+        if (bottom <= top) return@forEachIndexed
+        rect.set(0, top, w, bottom)
+        val bmp = runCatching { d.decodeRegion(rect, BitmapFactory.Options()) }.getOrNull() ?: return@forEachIndexed
+        val rows = bottom - top
+        if (bmp.width == w && bmp.height == rows) {
+          bmp.getPixels(px, 0, w, 0, 0, w, rows)
+          used++
+          Align.accumulate(px, w, rows, top + moveY - y0, moveX, night, accR, accG, accB, accW)
         }
+        bmp.recycle()
       }
       if (used == 0) break
-      val strip = IntArray(n)
       for (i in 0 until n) {
         val wt = if (accW[i] > 0.0) accW[i] else 1.0
         val r = (accR[i] / wt).toInt().coerceIn(0, 255)
@@ -1110,54 +1307,45 @@ class CameraEngine(private val ctx: Context) {
       out.setPixels(strip, 0, w, 0, y0, w, th)
       y0 += tileH
     }
-    decoders.forEach { runCatching { it.recycle() } }
+    decoders.forEach { runCatching { it?.recycle() } }
     val bos = ByteArrayOutputStream()
     out.compress(Bitmap.CompressFormat.JPEG, 95, bos)
     out.recycle()
     return bos.toByteArray()
   }
-  private fun mergeNight(frames: List<ByteArray>): ByteArray {
-    val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
-    val bitmaps = frames.mapNotNull {
-      runCatching { BitmapFactory.decodeByteArray(it, 0, it.size, opts) }.getOrNull()
-    }
-    if (bitmaps.isEmpty()) return frames.first()
-    val w = bitmaps[0].width
-    val h = bitmaps[0].height
-    val acc = IntArray(w * h)
-    val px = IntArray(w * h)
-    var n = 0
-    val refGray = grayOf(bitmaps[0])
-    var ref = bitmaps[0]
-    for (bmp in bitmaps) {
-      if (bmp.width != w || bmp.height != h) continue
-      var frame = bmp
-      if (n > 0 && bmp !== ref) {
-        val (dx, dy) = estimateShift(refGray, grayOf(bmp), w, h)
-        if (dx != 0 || dy != 0) frame = shiftBitmap(bmp, dx, dy)
-      }
-      frame.getPixels(px, 0, w, 0, 0, w, h)
-      n++
-      for (i in acc.indices) {
-        val c = px[i]
-        if (n == 1) { acc[i] = c; continue }
-        val a = acc[i]
-        val r = (((a shr 16) and 0xFF) * (n - 1) + ((c shr 16) and 0xFF)) / n
-        val g = (((a shr 8) and 0xFF) * (n - 1) + ((c shr 8) and 0xFF)) / n
-        val b = ((a and 0xFF) * (n - 1) + (c and 0xFF)) / n
-        acc[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
-      }
-      if (frame !== bmp) frame.recycle()
+
+  /**
+   * How far each frame of a burst has to move to sit on the first one, in full-resolution pixels.
+   * Measured on half-size copies: up to 24 px of hand shake, to the nearest 2 px.
+   */
+  private fun nightMoves(frames: List<ByteArray>): List<Pair<Int, Int>> {
+    val opts = BitmapFactory.Options().apply { inSampleSize = ALIGN_SAMPLE }
+    var ref: IntArray? = null
+    var refW = 0
+    var refH = 0
+    return frames.map { bytes ->
+      val bmp = runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) }.getOrNull()
+        ?: return@map 0 to 0
+      val w = bmp.width
+      val h = bmp.height
+      val gray = grayOf(bmp)
       bmp.recycle()
+      val r = ref
+      when {
+        r == null -> {
+          ref = gray
+          refW = w
+          refH = h
+          0 to 0
+        }
+        w != refW || h != refH -> 0 to 0
+        else -> {
+          // estimateShift says where the first frame's content sits in this one; moving it back is the negative
+          val (dx, dy) = Align.estimateShift(r, gray, w, h, maxShift = 12)
+          -dx * ALIGN_SAMPLE to -dy * ALIGN_SAMPLE
+        }
+      }
     }
-    val merged = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-    merged.setPixels(acc, 0, w, 0, 0, w, h)
-    val out = merged
-    val bos = ByteArrayOutputStream()
-    out.compress(Bitmap.CompressFormat.JPEG, 95, bos)
-    if (out !== merged) merged.recycle()
-    out.recycle()
-    return bos.toByteArray()
   }
 
   /** Portrait: keep the centre sharp, blur everything outside an oval. */
@@ -1168,28 +1356,51 @@ class CameraEngine(private val ctx: Context) {
     val src = runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) }.getOrNull() ?: return bytes
     val w = src.width
     val h = src.height
+    // Blur by halving four times and doubling back up. Each halving averages 2x2 pixels and each doubling blends
+    // neighbours, so the result is smooth; one big jump (the old w/42) samples a few pixels and comes back as blocks.
+    var blurred = src
+    repeat(BLUR_STEPS) {
+      val next = Bitmap.createScaledBitmap(blurred, (blurred.width / 2).coerceAtLeast(1), (blurred.height / 2).coerceAtLeast(1), true)
+      if (blurred !== src) blurred.recycle()
+      blurred = next
+    }
+    repeat(BLUR_STEPS) { i ->
+      val last = i == BLUR_STEPS - 1
+      val next = Bitmap.createScaledBitmap(blurred, if (last) w else blurred.width * 2, if (last) h else blurred.height * 2, true)
+      blurred.recycle()
+      blurred = next
+    }
+
     val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(out)
+    canvas.drawBitmap(blurred, 0f, 0f, null)
+    // The subject on top: an oval that is fully sharp in its middle and fades into the blur at its rim.
+    val oval = RectF(w * 0.18f, h * 0.12f, w * 0.82f, h * 0.92f)
+    val layer = canvas.saveLayer(null, null)
     canvas.drawBitmap(src, 0f, 0f, null)
-    val small = Bitmap.createScaledBitmap(src, (w / 42).coerceAtLeast(4), (h / 42).coerceAtLeast(4), true)
-    val blurred = Bitmap.createScaledBitmap(small, w, h, true)
-    val mask = Path().apply {
-      fillType = Path.FillType.EVEN_ODD
-      addRect(0f, 0f, w.toFloat(), h.toFloat(), Path.Direction.CW)
-      addOval(RectF(w * 0.22f, h * 0.16f, w * 0.78f, h * 0.88f), Path.Direction.CW)
+    val fade = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN)
+      shader = android.graphics.RadialGradient(
+        0.5f, 0.5f, 0.5f,
+        intArrayOf(android.graphics.Color.BLACK, android.graphics.Color.BLACK, android.graphics.Color.TRANSPARENT),
+        floatArrayOf(0f, 0.65f, 1f),
+        android.graphics.Shader.TileMode.CLAMP,
+      ).apply {
+        // a unit circle stretched over the oval
+        setLocalMatrix(Matrix().apply { setScale(oval.width(), oval.height()); postTranslate(oval.left, oval.top) })
+      }
     }
-    canvas.save()
-    canvas.clipPath(mask)
-    canvas.drawBitmap(blurred, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
-    canvas.restore()
-    val rotated = out
+    canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), fade)
+    canvas.restoreToCount(layer)
+
     val bos = ByteArrayOutputStream()
-    rotated.compress(Bitmap.CompressFormat.JPEG, 95, bos)
-    src.recycle(); small.recycle(); blurred.recycle()
-    if (rotated !== out) out.recycle()
-    rotated.recycle()
+    out.compress(Bitmap.CompressFormat.JPEG, 95, bos)
+    src.recycle()
+    blurred.recycle()
+    out.recycle()
     return bos.toByteArray()
   }
+
   /** HDR: bracket three exposures around the metered one and fuse by mid-tone weight. */
   private fun captureHdr() {
     val cam = device ?: return
@@ -1205,87 +1416,91 @@ class CameraEngine(private val ctx: Context) {
       for (e in exps) {
         val b = cam.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
         b.addTarget(r.surface)
-        b.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_OFF)
+        applyCommon(b)
+        // exposure by hand; white balance frozen so the three frames share one colour
         b.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
+        b.set(CaptureRequest.CONTROL_AWB_LOCK, true)
         b.set(CaptureRequest.SENSOR_SENSITIVITY, iso)
         b.set(CaptureRequest.SENSOR_EXPOSURE_TIME, e)
-        b.set(CaptureRequest.CONTROL_ZOOM_RATIO, zoomRatio)
         lastJpegRotation = jpegOrientation()
+        lastFlip = flipped()
         b.set(CaptureRequest.JPEG_ORIENTATION, lastJpegRotation)
         applyStillExtras(b)
-        s.capture(b.build(), null, handler)
+        s.capture(b.build(), stillCallback, handler)
       }
-      state = state.copy(busy = true, status = "hdr: ${exps.size} exposures")
+      state = state.copy(busy = true, status = "hdr: ${exps.size} eksposur")
     } catch (t: Throwable) {
       Log.e(TAG, "hdr failed", t)
-      state = state.copy(status = "hdr failed: ${t.message}")
+      state = state.copy(status = "hdr gagal: ${t.message}")
     }
-  }
-
-  private fun fuseHdr(frames: List<ByteArray>): ByteArray {
-    val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
-    val bitmaps = frames.mapNotNull {
-      runCatching { BitmapFactory.decodeByteArray(it, 0, it.size, opts) }.getOrNull()
-    }
-    if (bitmaps.isEmpty()) return frames.first()
-    val w = bitmaps[0].width
-    val h = bitmaps[0].height
-    val accR = DoubleArray(w * h)
-    val accG = DoubleArray(w * h)
-    val accB = DoubleArray(w * h)
-    val accW = DoubleArray(w * h)
-    val px = IntArray(w * h)
-    for (bmp in bitmaps) {
-      if (bmp.width != w || bmp.height != h) continue
-      bmp.getPixels(px, 0, w, 0, 0, w, h)
-      for (i in px.indices) {
-        val c = px[i]
-        val r = (c shr 16) and 0xFF
-        val g = (c shr 8) and 0xFF
-        val b = c and 0xFF
-        val lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
-        // mid-tone weighting: well exposed pixels contribute most
-        var wt = Math.exp(-((lum - 0.5) * (lum - 0.5)) / 0.08)
-        if (wt < 0.02) wt = 0.02
-        accR[i] += r * wt
-        accG[i] += g * wt
-        accB[i] += b * wt
-        accW[i] += wt
-      }
-      bmp.recycle()
-    }
-    val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-    val outp = IntArray(w * h)
-    for (i in outp.indices) {
-      val wt = if (accW[i] > 0.0) accW[i] else 1.0
-      val r = (accR[i] / wt).toInt().coerceIn(0, 255)
-      val g = (accG[i] / wt).toInt().coerceIn(0, 255)
-      val b = (accB[i] / wt).toInt().coerceIn(0, 255)
-      outp[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
-    }
-    out.setPixels(outp, 0, w, 0, 0, w, h)
-    val bos = ByteArrayOutputStream()
-    out.compress(Bitmap.CompressFormat.JPEG, 95, bos)
-    out.recycle()
-    return bos.toByteArray()
   }
   // ---------------------------------------------------------------- video
 
+  private var takeUri: android.net.Uri? = null
+  private var takePfd: android.os.ParcelFileDescriptor? = null
+  private var videoNote = ""
+
+  /** MediaStore row and descriptor for a new take. */
+  private fun newTake(suffix: String): android.os.ParcelFileDescriptor {
+    val name = "COVERCAM_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + suffix + ".mp4"
+    val values = ContentValues().apply {
+      put(MediaStore.Video.Media.DISPLAY_NAME, name)
+      put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+      put(MediaStore.Video.Media.RELATIVE_PATH, "DCIM/CoverCam")
+    }
+    val uri = ctx.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+      ?: throw java.io.IOException("penyimpanan menolak berkas baru")
+    takeUri = uri
+    val pfd = ctx.contentResolver.openFileDescriptor(uri, "w")
+      ?: throw java.io.IOException("berkas video tidak bisa dibuka")
+    takePfd = pfd
+    return pfd
+  }
+
+  /** A prepared MediaRecorder: H.264, plus AAC when the microphone is allowed. */
+  private fun newRecorder(pfd: android.os.ParcelFileDescriptor, size: Size, fps: Int, bitRate: Int): MediaRecorder {
+    val audio = canRecordAudio()
+    val rec = MediaRecorder(ctx)
+    recorder = rec // before prepare(): a recorder that fails to prepare is still released by finishTake()
+    if (audio) rec.setAudioSource(MediaRecorder.AudioSource.MIC)
+    rec.setVideoSource(MediaRecorder.VideoSource.SURFACE)
+    rec.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+    rec.setOutputFile(pfd.fileDescriptor)
+    rec.setVideoEncodingBitRate(bitRate)
+    rec.setVideoFrameRate(fps)
+    rec.setVideoSize(size.width, size.height)
+    rec.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
+    if (audio) rec.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+    // the encoder gets the sensor's own landscape frames; without this hint every clip plays on its side
+    rec.setOrientationHint(jpegOrientation())
+    rec.prepare()
+    recorderSurface = rec.surface
+    return rec
+  }
+
+  /** The fixed [fps, fps] range when the HAL lists one; null leaves the template's own range in place. */
+  private fun fixedFpsRange(ch: CameraCharacteristics, fps: Int): Range<Int>? =
+    ch.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+      ?.firstOrNull { it.lower == fps && it.upper == fps }
+
+  /** 60 fps needs a fixed 60 range, and both streams (preview and encoder) fast enough for 16.7 ms frames. */
+  private fun canRun60(
+    ch: CameraCharacteristics,
+    map: android.hardware.camera2.params.StreamConfigurationMap?,
+    video: Size,
+  ): Boolean = runCatching {
+    val frameNs = 1_000_000_000L / 60 + 500_000
+    map != null && fixedFpsRange(ch, 60) != null &&
+      map.getOutputMinFrameDuration(MediaRecorder::class.java, video) <= frameNs &&
+      map.getOutputMinFrameDuration(android.graphics.SurfaceTexture::class.java, previewSize) <= frameNs
+  }.getOrDefault(false)
+
   fun startRecording(): Boolean {
     val cam = device ?: return false
-    if (state.recording) return true
-    val preview = previewSurface
-    if (preview == null) return false
+    if (state.recording || recorder != null) return true
+    if (previewSurface == null) return false
     try {
-      val name = "COVERCAM_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".mp4"
-      val values = ContentValues().apply {
-        put(MediaStore.Video.Media.DISPLAY_NAME, name)
-        put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-        put(MediaStore.Video.Media.RELATIVE_PATH, "DCIM/CoverCam")
-      }
-      val uri = ctx.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: return false
-      val pfd = ctx.contentResolver.openFileDescriptor(uri, "w") ?: return false
-
+      val pfd = newTake("")
       val ch = manager.getCameraCharacteristics(cam.id)
       val map = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
       val supported = map?.getOutputSizes(MediaRecorder::class.java) ?: emptyArray()
@@ -1294,119 +1509,152 @@ class CameraEngine(private val ctx: Context) {
         .filter { it.width <= target.width && it.height <= target.height }
         .maxByOrNull { it.width.toLong() * it.height }
         ?: target
-      val fps = if (video60) 60 else 30
-      Log.i(TAG, "video " + size.width + "x" + size.height + "@" + fps + " choices=" + supported.size)
-
-      val rec = MediaRecorder(ctx)
-      if (canRecordAudio()) rec.setAudioSource(MediaRecorder.AudioSource.MIC)
-      rec.setVideoSource(MediaRecorder.VideoSource.SURFACE)
-      rec.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-      rec.setOutputFile(pfd.fileDescriptor)
-      rec.setVideoEncodingBitRate(if (size.width >= 3840) 48_000_000 else 20_000_000)
-      rec.setVideoFrameRate(fps)
-      rec.setVideoSize(size.width, size.height)
-      rec.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
-      if (canRecordAudio()) rec.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-      rec.prepare()
-      recorder = rec
-      recorderSurface = rec.surface
+      // 60 only when the camera can really run that fast: otherwise the file would claim 60 and hold 30
+      val fps = if (video60 && canRun60(ch, map, size)) 60 else 30
+      videoFps = fixedFpsRange(ch, fps)
+      videoNote = if (video60 && fps != 60) " (60 fps tidak didukung di ukuran ini)" else ""
+      Log.i(TAG, "video " + size.width + "x" + size.height + "@" + fps + " range=" + videoFps + " choices=" + supported.size)
+      newRecorder(pfd, size, fps, if (size.width >= 3840) 48_000_000 else 20_000_000)
 
       val camId = cam.id
-      closeDeviceKeepPreview()
+      closeDevice(keepPreview = true)
       openForVideo(camId)
       return true
     } catch (t: Throwable) {
       Log.e(TAG, "record start failed", t)
-      state = state.copy(status = "record failed: ${t.message}")
-      stopRecordingSafe()
+      finishTake()
+      state = state.copy(status = "rekaman gagal: ${t.message}")
       return false
     }
   }
 
   private fun openForVideo(id: String) {
-    val preview = previewSurface ?: return
+    val preview = previewSurface ?: return endTake("rekaman gagal: preview hilang")
     try {
-      val ch = manager.getCameraCharacteristics(id)
-      sensorOrientation = ch.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+      val token = ++openToken
       manager.openCamera(id, object : CameraDevice.StateCallback() {
         override fun onOpened(cam: CameraDevice) {
+          if (token != openToken) {
+            cam.close()
+            return
+          }
           device = cam
-          val surfaces = listOfNotNull(preview, recorderSurface)
+          recordTargets = listOfNotNull(preview, recorderSurface)
           val config = android.hardware.camera2.params.SessionConfiguration(
             android.hardware.camera2.params.SessionConfiguration.SESSION_REGULAR,
-            surfaces.map { android.hardware.camera2.params.OutputConfiguration(it) },
+            recordTargets.map { android.hardware.camera2.params.OutputConfiguration(it) },
             java.util.concurrent.Executor { r -> handler.post(r) },
             object : CameraCaptureSession.StateCallback() {
-            override fun onConfigured(s: CameraCaptureSession) {
-              session = s
-              val b = cam.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
-              surfaces.forEach { b.addTarget(it) }
-              applyCommon(b)
-              b.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON)
-              s.setRepeatingRequest(b.build(), null, handler)
-              try {
-                recorder?.start()
-                state = state.copy(
-                  recording = true,
-                  status = if (canRecordAudio()) "recording" else "recording (no audio)",
-                )
-              } catch (t: Throwable) {
-                Log.e(TAG, "recorder start failed", t)
-                state = state.copy(status = "recorder start failed: ${t.message}")
+              override fun onConfigured(s: CameraCaptureSession) {
+                if (device !== cam) return
+                session = s
+                try {
+                  s.setRepeatingRequest(buildRecordRequest(cam), null, handler)
+                  recorder?.start()
+                  // "recording" is set here, once frames really flow, not when the button was pressed
+                  state = state.copy(
+                    recording = true,
+                    recordingPaused = false,
+                    status = (if (canRecordAudio()) "merekam" else "merekam (tanpa audio)") + videoNote,
+                  )
+                } catch (t: Throwable) {
+                  Log.e(TAG, "recorder start failed", t)
+                  endTake("rekaman gagal: ${t.message}")
+                }
               }
-            }
-            override fun onConfigureFailed(s: CameraCaptureSession) {
-              state = state.copy(status = "video session failed")
-            }
-          },
+
+              override fun onConfigureFailed(s: CameraCaptureSession) = endTake("sesi video gagal")
+            },
           )
-          cam.createCaptureSession(config)
+          try {
+            cam.createCaptureSession(config)
+          } catch (t: Throwable) {
+            Log.e(TAG, "video session failed", t)
+            endTake("sesi video gagal: ${t.message}")
+          }
         }
-        override fun onDisconnected(cam: CameraDevice) { cam.close() }
-        override fun onError(cam: CameraDevice, error: Int) {
-          state = state.copy(status = "video camera error $error")
+
+        override fun onDisconnected(cam: CameraDevice) {
           cam.close()
+          if (token == openToken) cameraLost("kamera dipakai aplikasi lain")
+        }
+
+        override fun onError(cam: CameraDevice, error: Int) {
+          cam.close()
+          if (token == openToken) endTake("video camera error $error")
         }
       }, handler)
     } catch (t: Throwable) {
       Log.e(TAG, "openForVideo failed", t)
-      state = state.copy(status = "video open failed: ${t.message}")
+      endTake("rekaman gagal: ${t.message}")
     }
   }
 
-  fun stopRecording() {
-    try { recorder?.stop() } catch (t: Throwable) { Log.w(TAG, "recorder stop", t) }
-    stopRecordingSafe()
-    val empty = dropIfEmptyTake()
+  /** Stops any take: video, slow motion or HDR video. */
+  fun stopRecording() = endTake(null)
+
+  /** Ends the take, says how it went ([failure]: it never got going) and goes back to the photo session. */
+  private fun endTake(failure: String?) {
+    handler.removeCallbacks(slowArmTimeout)
+    val hadTake = takeUri != null
+    val saved = finishTake()
     state = state.copy(
       recording = false,
       recordingPaused = false,
-      status = if (empty) "slowmo gagal: kamera tidak mengirim frame" else "video saved",
+      slowPreview = false,
+      lastThumb = saved ?: state.lastThumb,
+      status = failure ?: when {
+        saved != null -> "video tersimpan"
+        hadTake -> "rekaman kosong: kamera tidak mengirim frame"
+        else -> state.status
+      },
     )
     closeDevice()
     openCurrent()
   }
 
   /**
-   * A slow-motion take that never received frames still leaves a MediaStore row and a few KB of
-   * container behind. Removes it and reports the failure instead of shipping a 0x0 video.
+   * Stops whichever recorder is running and releases it. Returns the saved file; null when there was no take, or
+   * it held no frames (such a take still leaves a few KB of container behind: that file is deleted).
    */
-  private fun dropIfEmptyTake(): Boolean {
-    val uri = slowMotionUri ?: return false
-    slowMotionUri = null
+  private fun finishTake(): android.net.Uri? {
+    hdrRecorder?.let { rec ->
+      hdrDraining = false
+      handler.removeCallbacks(hdrDrainTick)
+      // stop feeding the encoder before asking it to finish
+      runCatching { session?.stopRepeating() }
+      runCatching { session?.close() }
+      session = null
+      runCatching { rec.stop() }.onFailure { Log.w(TAG, "hdr recorder stop", it) }
+      hdrRecorder = null
+    }
+    recorder?.let { rec -> runCatching { rec.stop() }.onFailure { Log.w(TAG, "recorder stop", it) } }
+    stopRecordingSafe()
+    recordTargets = emptyList()
+    val uri = takeUri ?: return null
+    takeUri = null
     val size = runCatching {
       ctx.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize }
-    }.getOrNull() ?: return false
-    if (size >= MIN_VALID_VIDEO_BYTES) return false
+    }.getOrNull() ?: return uri
+    if (size >= MIN_VALID_VIDEO_BYTES) return uri
     runCatching { ctx.contentResolver.delete(uri, null, null) }
       .onFailure { Log.w(TAG, "empty take cleanup failed", it) }
-    Log.w(TAG, "slow motion produced $size bytes - deleted")
-    return true
+    Log.w(TAG, "take produced $size bytes - deleted")
+    return null
+  }
+
+  private fun stopRecordingSafe() {
+    try { recorder?.reset() } catch (_: Throwable) {}
+    try { recorder?.release() } catch (_: Throwable) {}
+    recorder = null
+    try { recorderSurface?.release() } catch (_: Throwable) {}
+    recorderSurface = null
+    try { takePfd?.close() } catch (_: Throwable) {}
+    takePfd = null
   }
 
   // ---------------------------------------------------------------- slow motion
 
-  private var slowMotionUri: android.net.Uri? = null
   private var hsSize: Size? = null
   private var hsFps = 0
 
@@ -1429,6 +1677,10 @@ class CameraEngine(private val ctx: Context) {
     Log.i(TAG, "highSpeed size=" + hsSize + " fps=" + hsFps)
   }
 
+  /**
+   * Arms a slow-motion take. The high-speed session needs its preview surface the moment it is created, and that
+   * surface exists only once the UI has mounted it, so the take itself starts in [setSlowPreviewSurface].
+   */
   fun startSlowMotion(): Boolean {
     // The front sensor advertises 1080p@120 (and 720p@120) yet its HAL never delivers frames to
     // the recorder - every take ends as a 0x0 video track. Refuse instead of writing a broken file.
@@ -1436,50 +1688,41 @@ class CameraEngine(private val ctx: Context) {
       state = state.copy(status = "slowmo tidak didukung kamera depan")
       return false
     }
-    val cam = device ?: return false
-    val hs = hsSize ?: return false
-    if (hsFps <= 0) return false
-    if (state.recording) return true
-    try {
-      val name = "COVERCAM_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + "_slow.mp4"
-      val values = ContentValues().apply {
-        put(MediaStore.Video.Media.DISPLAY_NAME, name)
-        put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-        put(MediaStore.Video.Media.RELATIVE_PATH, "DCIM/CoverCam")
-      }
-      val uri = ctx.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: return false
-      slowMotionUri = uri
-      val pfd = ctx.contentResolver.openFileDescriptor(uri, "w") ?: return false
+    if (device == null || hsSize == null || hsFps <= 0) return false
+    if (state.recording || state.slowPreview) return true
+    state = state.copy(slowPreview = true, status = "menyiapkan slowmo")
+    handler.postDelayed(slowArmTimeout, 2_000)
+    return true
+  }
 
-      val rec = MediaRecorder(ctx)
-      if (canRecordAudio()) rec.setAudioSource(MediaRecorder.AudioSource.MIC)
-      rec.setVideoSource(MediaRecorder.VideoSource.SURFACE)
-      rec.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-      rec.setOutputFile(pfd.fileDescriptor)
-      rec.setVideoEncodingBitRate(60_000_000)
-      rec.setVideoFrameRate(hsFps)
-      rec.setVideoSize(hs.width, hs.height)
-      rec.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
-      if (canRecordAudio()) rec.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-      rec.prepare()
-      recorder = rec
-      recorderSurface = rec.surface
+  /** The preview surface never came: give up instead of leaving the record button dead. */
+  private val slowArmTimeout = Runnable {
+    if (state.slowPreview && recorder == null) endTake("slowmo gagal: preview tidak siap")
+  }
+
+  private fun beginSlowMotion() {
+    handler.removeCallbacks(slowArmTimeout)
+    val cam = device
+    val hs = hsSize
+    if (cam == null || hs == null) return endTake("slowmo gagal: kamera belum siap")
+    try {
+      val rec = newRecorder(newTake("_slow"), hs, hsFps, 60_000_000)
       Log.i(TAG, "slowmo recording " + hs.width + "x" + hs.height + "@" + hsFps)
 
-      // A constrained high-speed session only accepts surfaces whose size is in the
-      // published high-speed list (here 1280x720 / 1920x1080). The TextureView preview is
-      // 1920x1440, so it cannot join: record-only, and the preview keeps its last frame.
+      // A constrained high-speed session only accepts surfaces whose size is in the published
+      // high-speed list (here 1280x720 / 1920x1080): the recorder, and the SurfaceView the UI sized to match.
       val surfaces = listOfNotNull(rec.surface, slowPreviewSurface)
       val outputConfigs = surfaces.map { android.hardware.camera2.params.OutputConfiguration(it) }
       val highSpeedCallback = object : CameraCaptureSession.StateCallback() {
         override fun onConfigured(s: CameraCaptureSession) {
+          if (device !== cam) return
           session = s
-          val b = cam.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
-          surfaces.forEach { b.addTarget(it) }
-          b.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, android.util.Range(hsFps, hsFps))
-          b.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
-          b.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
           try {
+            val b = cam.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
+            surfaces.forEach { b.addTarget(it) }
+            b.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, android.util.Range(hsFps, hsFps))
+            b.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+            b.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
             val list = (s as android.hardware.camera2.CameraConstrainedHighSpeedCaptureSession)
               .createHighSpeedRequestList(b.build())
             s.setRepeatingBurst(list, null, handler)
@@ -1491,15 +1734,11 @@ class CameraEngine(private val ctx: Context) {
             )
           } catch (t: Throwable) {
             Log.e(TAG, "slowmo start failed", t)
-            state = state.copy(status = "slowmo failed: " + t.message)
-            stopRecordingSafe()
+            endTake("slowmo gagal: " + t.message)
           }
         }
 
-        override fun onConfigureFailed(s: CameraCaptureSession) {
-          state = state.copy(status = "slowmo config failed")
-          stopRecordingSafe()
-        }
+        override fun onConfigureFailed(s: CameraCaptureSession) = endTake("sesi slowmo gagal")
       }
       cam.createCaptureSession(
         android.hardware.camera2.params.SessionConfiguration(
@@ -1509,12 +1748,9 @@ class CameraEngine(private val ctx: Context) {
           highSpeedCallback,
         ),
       )
-      return true
     } catch (t: Throwable) {
       Log.e(TAG, "slowmo failed", t)
-      state = state.copy(status = "slowmo failed: " + t.message)
-      stopRecordingSafe()
-      return false
+      endTake("slowmo gagal: " + t.message)
     }
   }
 
@@ -1532,24 +1768,16 @@ class CameraEngine(private val ctx: Context) {
 
   fun startHdrVideo(): Boolean {
     val cam = device ?: return false
-    if (state.recording) return true
+    if (state.recording || hdrRecorder != null) return true
     val preview = previewSurface ?: return false
     try {
-      val name = "COVERCAM_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + "_hdr.mp4"
-      val values = ContentValues().apply {
-        put(MediaStore.Video.Media.DISPLAY_NAME, name)
-        put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-        put(MediaStore.Video.Media.RELATIVE_PATH, "DCIM/CoverCam")
-      }
-      val uri = ctx.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: return false
-      val pfd = ctx.contentResolver.openFileDescriptor(uri, "w") ?: return false
-      val muxer = android.media.MediaMuxer(
-        pfd.fileDescriptor,
-        android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4,
-      )
+      val pfd = newTake("_hdr")
+      val muxer = android.media.MediaMuxer(pfd.fileDescriptor, android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+      muxer.setOrientationHint(jpegOrientation())
       val rec = HdrVideoRecorder(1920, 1080, 30, muxer)
+      hdrRecorder = rec // before prepare(): an encoder that fails to start is still released by finishTake()
       val surface = rec.prepare()
-      hdrRecorder = rec
+      recordTargets = listOf(preview, surface)
 
       val previewCfg = android.hardware.camera2.params.OutputConfiguration(preview)
       val videoCfg = android.hardware.camera2.params.OutputConfiguration(surface)
@@ -1563,53 +1791,29 @@ class CameraEngine(private val ctx: Context) {
         java.util.concurrent.Executor { r -> handler.post(r) },
         object : CameraCaptureSession.StateCallback() {
           override fun onConfigured(s: CameraCaptureSession) {
+            if (device !== cam) return
             session = s
-            val b = cam.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
-            b.addTarget(preview)
-            b.addTarget(surface)
-            applyCommon(b)
-            runCatching { s.setRepeatingRequest(b.build(), null, handler) }
-              .onFailure { Log.e(TAG, "hdr repeating failed", it) }
+            try {
+              s.setRepeatingRequest(buildRecordRequest(cam), null, handler)
+            } catch (t: Throwable) {
+              Log.e(TAG, "hdr repeating failed", t)
+              return endTake("hdr gagal: " + t.message)
+            }
             hdrDraining = true
             handler.post(hdrDrainTick)
-            state = state.copy(recording = true, status = "hdr video recording")
+            state = state.copy(recording = true, recordingPaused = false, status = "merekam hdr")
           }
 
-          override fun onConfigureFailed(s: CameraCaptureSession) {
-            state = state.copy(status = "hdr session failed")
-            stopHdrVideo()
-          }
+          override fun onConfigureFailed(s: CameraCaptureSession) = endTake("sesi hdr gagal")
         },
       )
       cam.createCaptureSession(config)
       return true
     } catch (t: Throwable) {
       Log.e(TAG, "hdr video failed", t)
-      state = state.copy(status = "hdr failed: " + t.message)
-      stopHdrVideo()
+      endTake("hdr gagal: " + t.message)
       return false
     }
-  }
-
-  fun stopHdrVideo() {
-    hdrDraining = false
-    handler.removeCallbacks(hdrDrainTick)
-    runCatching { session?.stopRepeating() }
-    runCatching { session?.close() }
-    session = null
-    runCatching { hdrRecorder?.stop() }
-    hdrRecorder = null
-    state = state.copy(recording = false, recordingPaused = false, status = "hdr video saved")
-    closeDevice()
-    openCurrent()
-  }
-
-  private fun stopRecordingSafe() {
-    try { recorder?.reset() } catch (_: Throwable) {}
-    try { recorder?.release() } catch (_: Throwable) {}
-    recorder = null
-    try { recorderSurface?.release() } catch (_: Throwable) {}
-    recorderSurface = null
   }
 
   // ---------------------------------------------------------------- transform
@@ -1663,8 +1867,37 @@ class CameraEngine(private val ctx: Context) {
 
   fun previewRotation(): Int = (baseRotation() + extraFor(currentId) + 360) % 360
 
-  /** The JPEG buffer needs a further 90 degrees on this panel; verified on device. */
-  fun jpegOrientation(): Int = (previewRotation() + 270) % 360
+  /**
+   * Clockwise turn that stands the sensor image upright the way the preview shows it (its mirror aside): photos,
+   * DNGs and videos all carry this one value.
+   *
+   * The TextureView content already carries the sensor orientation and previewRotation() turns it further, so a
+   * back-facing sensor ends up turned by their sum; a front-facing one is mirrored first, which reverses the turn.
+   * With the calibrated defaults this is Camera2's own JPEG_ORIENTATION formula (sensor -/+ display rotation).
+   *
+   * Measured on the Flip5: id 0 reports sensor=90. A fixed "+270" stored its photos upside-down against the preview
+   * and against the DNGs (whose separate setting had been tuned to 90); it only fits a sensor mounted at 270.
+   */
+  fun jpegOrientation(): Int =
+    if (lensFront) {
+      (sensorOrientation - previewRotation() + 360) % 360
+    } else {
+      (previewRotation() + sensorOrientation) % 360
+    }
+
+  /**
+   * The preview is the sensor picture flipped left-right, and stills are stored the same way: what you see is what
+   * is saved.
+   *
+   * Measured on the Flip5: the HAL hands out the main lens (id 0) already mirrored (in a photo of a whiteboard the
+   * writing ran backwards and the clock counted anticlockwise), the ultrawide (id 2) is true. That is why id 0 has
+   * its mirror on by default. A front-facing lens is mirrored by the framework in the preview only, so there the
+   * mirror setting undoes it and nothing is flipped in the file.
+   */
+  private fun flipped(): Boolean = mirrorFor(currentId) != lensFront
+
+  /** EXIF orientation of the shot being taken: [lastJpegRotation] plus the flip, both fixed at shutter time. */
+  private fun lastExif(): Int = PreviewGeometry.exifOrientation(lastJpegRotation, lastFlip)
 
   fun bumpRotation() {
     prefs.edit().putInt("extra_$currentId", (extraFor(currentId) + 90) % 360).apply()
@@ -1683,19 +1916,26 @@ class CameraEngine(private val ctx: Context) {
     val w = tv.width.toFloat()
     val h = tv.height.toFloat()
     if (w == 0f || h == 0f) return
+    val rotation = previewRotation()
+    // TextureView stretches the 4:3 buffer over the whole (nearly square) view. Scale it back to the picture's
+    // real shape first, then turn and mirror it as calibrated: the picture is fitted, never squeezed.
+    val sensorAspect = previewSize.width.toFloat() / previewSize.height
+    val (pw, ph) = PreviewGeometry.pictureSize(w, h, sensorAspect, jpegOrientation())
+    val (sx, sy) = PreviewGeometry.contentScale(w, h, pw, ph, rotation)
+    val aspect = PreviewGeometry.pictureAspect(sensorAspect, jpegOrientation())
+    pictureW = pw
+    pictureH = ph
     val m = Matrix()
-    m.postRotate(previewRotation().toFloat(), w / 2f, h / 2f)
+    m.postScale(sx, sy, w / 2f, h / 2f)
+    m.postRotate(rotation.toFloat(), w / 2f, h / 2f)
     if (mirrorFor(currentId)) m.postScale(-1f, 1f, w / 2f, h / 2f)
     tv.setTransform(m)
+    if (sx != state.previewScaleX || sy != state.previewScaleY || aspect != state.pictureAspect) {
+      state = state.copy(previewScaleX = sx, previewScaleY = sy, pictureAspect = aspect)
+    }
   }
 
-  private fun writeExifOrientation(uri: android.net.Uri, degrees: Int) {
-    val tag = when (((degrees % 360) + 360) % 360) {
-      90 -> android.media.ExifInterface.ORIENTATION_ROTATE_90
-      180 -> android.media.ExifInterface.ORIENTATION_ROTATE_180
-      270 -> android.media.ExifInterface.ORIENTATION_ROTATE_270
-      else -> android.media.ExifInterface.ORIENTATION_NORMAL
-    }
+  private fun writeExifOrientation(uri: android.net.Uri, tag: Int) {
     runCatching {
       ctx.contentResolver.openFileDescriptor(uri, "rw")?.use { pfd ->
         val exif = android.media.ExifInterface(pfd.fileDescriptor)
@@ -1709,25 +1949,6 @@ class CameraEngine(private val ctx: Context) {
     val px = IntArray(bmp.width * bmp.height)
     bmp.getPixels(px, 0, bmp.width, 0, 0, bmp.width, bmp.height)
     return Align.toGray(px)
-  }
-
-  /** Coarse translation search (+/- SHIFT) on a subsampled grid; returns dx, dy. */
-  private fun estimateShift(ref: IntArray, cur: IntArray, w: Int, h: Int): Pair<Int, Int> =
-    Align.estimateShift(ref, cur, w, h)
-
-  private fun shiftBitmap(bmp: Bitmap, dx: Int, dy: Int): Bitmap {
-    val out = Bitmap.createBitmap(bmp.width, bmp.height, Bitmap.Config.ARGB_8888)
-    val c = Canvas(out)
-    c.drawColor(android.graphics.Color.BLACK)
-    c.drawBitmap(bmp, dx.toFloat(), dy.toFloat(), null)
-    return out
-  }
-
-  private fun rotateBitmap(bmp: Bitmap, degrees: Int): Bitmap {
-    if (degrees % 360 == 0) return bmp
-    val m = Matrix()
-    m.postRotate(degrees.toFloat())
-    return Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
   }
 
   private fun pickPreviewSize(sizes: Array<Size>): Size {
@@ -1757,7 +1978,9 @@ class CameraEngine(private val ctx: Context) {
     private val DEFAULT_EXTRA = mapOf("2" to 90, "0" to 270)
     private val DEFAULT_MIRROR = setOf("0", "1", "3")
     private const val PANO_TARGET = 3
-    private const val SHIFT = 6
+    private const val ALIGN_SAMPLE = 2
+    private const val BLUR_STEPS = 4
     private const val MIN_VALID_VIDEO_BYTES = 100_000L
+    private val RAW_MODES = setOf(Mode.PHOTO, Mode.PRO)
   }
 }

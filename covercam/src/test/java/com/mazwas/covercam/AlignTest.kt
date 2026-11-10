@@ -70,9 +70,54 @@ class AlignTest {
             if (sy in 0 until h && sx in 0 until w) ref[sy * w + sx] else 0
         }
       }
-      // A displacement of (dx,dy) needs the opposite correction applied to cur.
+      // cur shows at (x, y) what ref has at (x + dx, y + dy): ref's content is found (dx, dy) earlier in cur.
       val (mx, my) = Align.estimateShift(ref, cur, w, h)
       assertTrue("expected ($(-dx),$(-dy)) got ($mx,$my)", abs(mx + dx) <= 1 && abs(my + dy) <= 1)
+    }
+  }
+
+  /**
+   * The night merge end to end, on one strip: a shifted copy of a frame, moved back by what estimateShift measured,
+   * must land exactly on the original, so their average is the original again.
+   */
+  @Test
+  fun `accumulate with the measured move puts a shaken frame back on the first one`() {
+    val w = 96
+    val h = 96
+    val ref = IntArray(w * h).also { px ->
+      val rnd = java.util.Random(3)
+      for (i in px.indices) { val v = rnd.nextInt(256); px[i] = (0xFF shl 24) or (v shl 16) or (v shl 8) or v }
+    }
+    val shakeX = 4
+    val shakeY = -2
+    // cur = ref with its content moved by (shakeX, shakeY)
+    val cur = IntArray(w * h)
+    for (y in 0 until h) for (x in 0 until w) {
+      val sx = x - shakeX
+      val sy = y - shakeY
+      cur[y * w + x] = if (sx in 0 until w && sy in 0 until h) ref[sy * w + sx] else 0
+    }
+    val (dx, dy) = Align.estimateShift(Align.toGray(ref), Align.toGray(cur), w, h)
+    assertEquals(shakeX to shakeY, dx to dy)
+    val moveX = -dx
+    val moveY = -dy
+
+    val accR = DoubleArray(w * h)
+    val accG = DoubleArray(w * h)
+    val accB = DoubleArray(w * h)
+    val accW = DoubleArray(w * h)
+    Align.accumulate(ref, w, h, 0, 0, true, accR, accG, accB, accW)
+    // the rows of cur that land inside the strip once it is moved, exactly as processFullRes cuts them
+    val top = (0 - moveY).coerceIn(0, h)
+    val bottom = (h - moveY).coerceIn(0, h)
+    Align.accumulate(cur.copyOfRange(top * w, bottom * w), w, bottom - top, top + moveY, moveX, true, accR, accG, accB, accW)
+
+    for (y in 0 until h) for (x in 0 until w) {
+      val i = y * w + x
+      assertEquals("pixel $x,$y", (ref[i] and 0xFF).toDouble(), accR[i] / accW[i], 0.0)
+      // the border the shaken frame could not cover came from the first frame alone
+      val covered = x + shakeX in 0 until w && y + shakeY in 0 until h
+      assertEquals("weight $x,$y", if (covered) 2.0 else 1.0, accW[i], 0.0)
     }
   }
 

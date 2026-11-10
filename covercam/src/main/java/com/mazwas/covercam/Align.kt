@@ -44,9 +44,8 @@ internal object Align {
   /**
    * Coarse integer translation between two frames.
    *
-   * Returns the correction to APPLY to [cur] so it lines up with [ref] — i.e. if the content of
-   * [cur] sits 5 px to the right of [ref], this returns -5. Night merge feeds the result straight
-   * into a translated draw, which is why the sign is a correction and not a displacement.
+   * Returns where the content of [ref] is found in [cur]: `ref[y][x] ~ cur[y + dy][x + dx]`. If the content of
+   * [cur] sits 5 px to the right of [ref], this returns +5, and lining [cur] up means moving it by the negative.
    */
   fun estimateShift(
     ref: IntArray,
@@ -91,6 +90,48 @@ internal object Align {
       }
     }
     return bestDx to bestDy
+  }
+
+  /**
+   * Adds one decoded strip of a frame to the running sums of a merge.
+   *
+   * [px] holds [rows] rows of width [w]. Its first row lands on strip row [firstRow] and every pixel moves [moveX]
+   * to the right (the frame's alignment). Pixels pushed off the strip are skipped, so [accW] ends up holding how
+   * much each output pixel received. [night] averages evenly; otherwise mid-tones weigh most (exposure fusion).
+   */
+  fun accumulate(
+    px: IntArray,
+    w: Int,
+    rows: Int,
+    firstRow: Int,
+    moveX: Int,
+    night: Boolean,
+    accR: DoubleArray,
+    accG: DoubleArray,
+    accB: DoubleArray,
+    accW: DoubleArray,
+  ) {
+    val x0 = maxOf(0, moveX)
+    val x1 = minOf(w, w + moveX)
+    for (row in 0 until rows) {
+      val out = (firstRow + row) * w
+      val src = row * w - moveX
+      for (x in x0 until x1) {
+        val c = px[src + x]
+        val r = (c shr 16) and 0xFF
+        val g = (c shr 8) and 0xFF
+        val b = c and 0xFF
+        val wt = if (night) 1.0 else {
+          val lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+          Math.exp(-((lum - 0.5) * (lum - 0.5)) / 0.08).coerceAtLeast(0.02)
+        }
+        val i = out + x
+        accR[i] += r * wt
+        accG[i] += g * wt
+        accB[i] += b * wt
+        accW[i] += wt
+      }
+    }
   }
 
   /** Luminance plane used by every matcher above. */

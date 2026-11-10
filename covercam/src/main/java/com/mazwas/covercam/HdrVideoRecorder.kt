@@ -49,13 +49,18 @@ class HdrVideoRecorder(
     return surface
   }
 
-  /** Moves whatever the encoder already produced into the muxer. */
+  /**
+   * Moves whatever the encoder already produced into the muxer. Called from the main thread every 40 ms, so while
+   * recording it never waits for the encoder; only the final drain does, and that one gives up after two seconds
+   * instead of hanging the app on an encoder that never signals its end.
+   */
   fun drain(endOfStream: Boolean = false) {
     val codec = encoder ?: return
+    val deadline = System.nanoTime() + 2_000_000_000L
     while (true) {
-      val index = codec.dequeueOutputBuffer(info, 10_000)
+      val index = codec.dequeueOutputBuffer(info, if (endOfStream) 10_000 else 0)
       when {
-        index == MediaCodec.INFO_TRY_AGAIN_LATER -> if (!endOfStream) return
+        index == MediaCodec.INFO_TRY_AGAIN_LATER -> if (!endOfStream || System.nanoTime() > deadline) return
         index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
           if (muxerStarted) continue
           trackIndex = muxer.addTrack(codec.outputFormat)

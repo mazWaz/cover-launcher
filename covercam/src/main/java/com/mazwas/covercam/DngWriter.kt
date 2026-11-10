@@ -50,7 +50,7 @@ object DngWriter {
     blackLevel: Int,
     whiteLevel: Int,
     cfa: Int,
-    orientationDegrees: Int,
+    orientation: Int,
     asShotNeutral: DoubleArray,
     previewJpeg: ByteArray?,
     color: RawColor = RawColor(),
@@ -132,7 +132,7 @@ object DngWriter {
     ascii(ifd0, 271, make)
     ascii(ifd0, 272, model)
     singleLong(ifd0, 273, 0)
-    singleShort(ifd0, 274, when (orientationDegrees) { 90 -> 6; 180 -> 3; 270 -> 8; else -> 1 })
+    singleShort(ifd0, 274, orientation) // EXIF/TIFF orientation code, mirrored ones included
     singleShort(ifd0, 277, 1)
     singleLong(ifd0, 278, height)
     singleLong(ifd0, 279, pixels.size)
@@ -216,8 +216,8 @@ object DngWriter {
     val stripOffset = auxOffset
     val previewOffset = stripOffset + pixels.size
 
-    val total = previewOffset + (previewJpeg?.size ?: 0)
-    val buf = ByteBuffer.allocate(total).order(ByteOrder.LITTLE_ENDIAN)
+    // Only the header is assembled in memory; the 24 MB of pixels go straight to the file after it.
+    val buf = ByteBuffer.allocate(stripOffset).order(ByteOrder.LITTLE_ENDIAN)
 
     buf.put('I'.code.toByte()); buf.put('I'.code.toByte())
     buf.putShort(42.toShort())
@@ -256,14 +256,6 @@ object DngWriter {
       buf.putInt(ifd1Offset + 2 + prevIdx * 12 + 8, previewOffset)
     }
 
-    buf.position(stripOffset)
-    buf.put(pixels)
-    if (previewJpeg != null) {
-      buf.position(previewOffset)
-      buf.put(previewJpeg)
-    }
-
-    val bytes = buf.array()
     val name = "COVERCAM_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".dng"
     val values = ContentValues().apply {
       put(MediaStore.Images.Media.DISPLAY_NAME, name)
@@ -271,7 +263,11 @@ object DngWriter {
       put(MediaStore.Images.Media.RELATIVE_PATH, "DCIM/CoverCam")
     }
     val uri = ctx.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return null
-    ctx.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+    ctx.contentResolver.openOutputStream(uri)?.use { os ->
+      os.write(buf.array())
+      os.write(pixels)
+      previewJpeg?.let(os::write)
+    }
     return uri
   }
 

@@ -8,9 +8,9 @@ android {
   compileSdk = 37
 
   defaultConfig {
-    // Deliberately the package name Samsung allowlists for its own camera stack:
-    // hidden physical camera ids (56 main, 58 ultrawide) are only visible to
-    // packages on that list. Same mechanism every Samsung GCam mod uses.
+    // Deliberately the package name Samsung GCam mods use: Samsung's cameraserver filters the lens list per
+    // package. Measured on the phone with this name: cameraIdList = 0,1,2,3 (the physical ids 56/58 stay hidden).
+    // What a different name would lose is untested. See covercam/README.md.
     applicationId = "com.samsung.android.ruler"
     minSdk = 34
     targetSdk = 36
@@ -22,8 +22,11 @@ android {
 
   buildTypes {
     release {
-      isMinifyEnabled = false
+      // Sideloaded on one phone, so the debug key is fine. R8 is what makes Compose smooth (same as :app).
+      isMinifyEnabled = true
+      isShrinkResources = true
       signingConfig = signingConfigs.getByName("debug")
+      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
     }
   }
 }

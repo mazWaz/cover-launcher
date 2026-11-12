@@ -84,7 +84,8 @@ yang disimpan.
 | Kurva | HLG dari HAL | GoPro Protune Flat: `y = ln(112x + 1) / ln(113)` |
 | Lensa | id `0` dan `2` | 60 fps hanya lensa utama (id `0`); tombol FPS diredupkan di ultrawide |
 
-Membuka klip log di pengolah video: gamma masukan **GoPro Protune Flat**, gamut **Rec.2020**. Tanpa preset itu,
+Membuka klip log di pengolah video: gamma masukan **GoPro Protune Flat**, gamut **Rec.2020** (bacaan terdekat untuk
+white balance otomatis, lihat "Batas log"). Tanpa preset itu,
 rumus baliknya `x = (113^y − 1) / 112` dengan `y = (kode − 64) / 876` (10-bit, limited range). `x = 0.18` adalah
 abu-abu tengah (`y ≈ 0.65`), `x = 1` sensor yang jenuh.
 
@@ -104,14 +105,37 @@ Terukur di HP (2026-11-10, `ffprobe` pada berkas yang ditarik):
 
 Batas log:
 
-- **Berkas tetap bertanda HLG** (`arib-std-b67`, BT.2020): encoder mengabaikan permintaan transfer lain. Pemutar yang
-  percaya tanda itu menampilkannya sebagai HDR yang salah; di pengolah video gammanya harus dipilih sendiri.
+- **Klip log bertanda SDR, bukan HLG**: encoder selalu menulis HLG (ia mengikuti stream kamera), dan pemutar yang
+  percaya tanda itu memperlakukan klip log sebagai HDR. Karena itu aplikasi menulis ulang tandanya saat merekam:
+  transfer BT.709 di parameter set stream (`HevcTag`) dan di kotak `colr`; primer tetap BT.2020, klip HLG tidak
+  disentuh. Tambalannya sama byte demi byte dengan `ffmpeg -bsf:v hevc_metadata=transfer_characteristics=1` pada
+  `csd-0` HP ini (tes unit). Terukur di HP (2026-11-12): klip log terbaca `color_transfer=bt709`, `colr` 9/1/9, dan
+  MediaStore Android mencatat `color_transfer=3` (SDR); klip HLG tetap `arib-std-b67` dan 7. Sama untuk log 1:1
+  (1088×1088) dan 4:3 (1440×1080). Di pemutar video Samsung pada layar cover (`dumpsys SurfaceFlinger`), lapisan
+  video klip log baru `BT2020_ITU` (SDR), klip log lama yang masih bertanda HLG `BT2020_ITU_HLG`. Kurva lognya tetap
+  harus dipilih sendiri di pengolah video. Klip log lama bisa ditandai ulang tanpa encode ulang:
+  `ffmpeg -i in.mp4 -c copy -bsf:v hevc_metadata=transfer_characteristics=1 -color_trc bt709 out.mp4`.
 - Tanpa suara, dan tanpa "view assist": preview memang datar.
 - Preview sebelum merekam berjalan 30 fps; 60 fps dimulai bersama rekaman. Laju yang dilaporkan status dibaca dari
   `SENSOR_FRAME_DURATION`, bukan dari yang diminta.
 - Saat HP panas laju bisa turun: probe pada status termal 2 sekali memberi 55,9 fps.
-- Gamut (BT.2020) diambil dari tanda stream, tidak diukur. Posisi 64 titik kurva di HAL (`i/63` atau `i/64`) juga
-  tidak diukur: selisihnya paling banyak 0,02 stop.
+- **Gamut**, terukur 2026-11-12 tanpa adegan: sensor diberi sembilan warna polos lewat
+  `SENSOR_TEST_PATTERN_MODE_SOLID_COLOR` (HAL memakai 10 bit terbawah tiap nilai pola, bukan yang teratas), lalu
+  berkas log dihitung balik ke linear.
+  - Setelah matriks koreksi warna, HAL tidak mengubah gamut lagi: dengan gain 1 dan matriks identitas, RGB linear
+    berkas sama dengan RGB sensor (matriks hasil fit berjarak 0,003 dari identitas, meleset paling banyak 0,004).
+    Kurva dan limited range ikut terbukti oleh kelurusan itu.
+  - White balance otomatis: HAL memakai matriksnya sendiri dan melaporkannya apa adanya (berkas = 1,03 × matriks ×
+    gain × sensor, selisih per kanal sampai 7 %). Matriks sesi 10-bit berbeda dari sesi SDR; hasil baginya
+    `[0,69 0,40 −0,09; 0,04 1,15 −0,18; −0,01 0,09 0,92]` paling dekat ke Rec.709→Rec.2020 (rms 0,115; ke P3 0,127;
+    tanpa konversi 0,195), tetapi bukan konversi murni: hijau lebih terang, biru lebih jenuh. "Rec.2020" jadi
+    bacaan terdekat, bukan nilai kolorimetris.
+  - White balance Kelvin manual: matriks yang dikirim aplikasi diterapkan apa adanya, jadi matriks ke sRGB
+    (`WhiteBalance.toSrgb`) mengisi berkas bertanda BT.2020 dengan nilai sRGB. Selama rekaman 10-bit (HLG maupun
+    log) aplikasi karena itu mengirim `WhiteBalance.toRec2020`. Terukur pada 5981 K: matriks yang dilaporkan HAL di
+    rekaman 10-bit sama dengan BT.2087 × matriks sesi SDR (selisih terbesar 0,006, satu langkah HAL 1/128), dan
+    berkas log terhadap warna sRGB dari nilai sensor yang sama memberi matriks Rec.709→Rec.2020 (rms 0,0065).
+- Posisi 64 titik kurva di HAL (`i/63` atau `i/64`) tidak diukur: selisihnya paling banyak 0,02 stop.
 
 ## Tata letak: gambar berdiri sendiri, kontrol di bidang hitam
 

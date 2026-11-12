@@ -9,7 +9,9 @@ In:  the clip read as video (limited) range, the way the file is flagged.
 Out: S-Log3 as Sony's formula gives it, code value / 1023: black 0.093, middle grey 0.411.
      The clipped sensor lands at 0.596, so an S-Log3 look shows it as light grey, not white.
 
-shortcut: Rec.2020 is what the stream is tagged, not what was measured; shoot a colour chart before trusting the second file.
+shortcut: Rec.2020 is the nearest reading of a clip shot with automatic white balance, not an exact one (measured
+2026-11-12, README "Batas log"): the phone's own matrix adds a look. Manual Kelvin is exact Rec.2020. Undo the look
+with the measured matrix when exact colour matters.
 """
 import math
 import os

@@ -9,7 +9,7 @@ import android.view.Surface
 
 /**
  * HEVC Main10 recorder of the 10-bit video mode: HLG at 30 fps, or log at 60 (the camera's tone curve decides
- * which; the file is tagged HLG either way, the encoder ignores any other transfer).
+ * which). The encoder tags the stream HLG either way; with [sdrTag] the tag is rewritten, see [HevcTag].
  *
  * Deliberately isolated from the MediaRecorder path: if anything here fails, normal
  * 1080p recording keeps working untouched. Video-only (no audio) for now.
@@ -19,6 +19,7 @@ class HdrVideoRecorder(
   private val height: Int,
   private val fps: Int,
   private val muxer: MediaMuxer,
+  private val sdrTag: Boolean = false,
 ) {
   private var encoder: MediaCodec? = null
   private var inputSurface: Surface? = null
@@ -64,7 +65,7 @@ class HdrVideoRecorder(
         index == MediaCodec.INFO_TRY_AGAIN_LATER -> if (!endOfStream || System.nanoTime() > deadline) return
         index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
           if (muxerStarted) continue
-          trackIndex = muxer.addTrack(codec.outputFormat)
+          trackIndex = muxer.addTrack(codec.outputFormat.also { if (sdrTag) tagSdr(it) })
           muxer.start()
           muxerStarted = true
           Log.i(TAG, "HDR muxer started track=$trackIndex")
@@ -81,6 +82,19 @@ class HdrVideoRecorder(
         }
       }
     }
+  }
+
+  /** A log clip is not HLG: BT.709 transfer in the stream's own parameter sets and in the container's colour box. */
+  private fun tagSdr(format: MediaFormat) {
+    val csd = format.getByteBuffer("csd-0") ?: return
+    val patched = HevcTag.hlgToSdr(ByteArray(csd.remaining()).also { csd.duplicate().get(it) })
+    if (patched == null) {
+      Log.w(TAG, "no HLG tag found in csd-0, the clip stays tagged HLG")
+      return
+    }
+    // both or neither: two tags that disagree are worse than one wrong tag
+    format.setByteBuffer("csd-0", java.nio.ByteBuffer.wrap(patched))
+    format.setInteger(MediaFormat.KEY_COLOR_TRANSFER, MediaFormat.COLOR_TRANSFER_SDR_VIDEO)
   }
 
   fun stop() {

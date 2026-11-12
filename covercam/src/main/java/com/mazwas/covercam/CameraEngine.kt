@@ -766,10 +766,13 @@ class CameraEngine(private val ctx: Context) {
     }
     val calibration = rawColor()
     val white = WhiteBalance.neutral(kelvin, calibration)
-    val toSrgb = WhiteBalance.toSrgb(kelvin, calibration)
+    // a 10-bit take is tagged BT.2020 and the HAL converts nothing after this matrix (measured): sRGB values
+    // in that file are the wrong colours
+    val matrix =
+      if (hdrRecorder != null) WhiteBalance.toRec2020(kelvin, calibration) else WhiteBalance.toSrgb(kelvin, calibration)
     if (state.wbMode != CaptureRequest.CONTROL_AWB_MODE_OFF) {
       b.set(CaptureRequest.CONTROL_AWB_MODE, state.wbMode)
-    } else if (white == null || toSrgb == null) {
+    } else if (white == null || matrix == null) {
       // no calibration to work a colour temperature out with: automatic is the honest picture
       b.set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO)
     } else {
@@ -783,7 +786,7 @@ class CameraEngine(private val ctx: Context) {
       b.set(
         CaptureRequest.COLOR_CORRECTION_TRANSFORM,
         android.hardware.camera2.params.ColorSpaceTransform(
-          Array(9) { android.util.Rational(Math.round(toSrgb[it] * 10000).toInt(), 10000) },
+          Array(9) { android.util.Rational(Math.round(matrix[it] * 10000).toInt(), 10000) },
         ),
       )
     }
@@ -1942,7 +1945,7 @@ class CameraEngine(private val ctx: Context) {
       val size = pickVideoSize(map?.getOutputSizes(MediaRecorder::class.java) ?: emptyArray(), Size(1920, 1088))
       val fps = if (hdr60 && video60Available) 60 else 30
       recordFps = fps
-      val rec = HdrVideoRecorder(size.width, size.height, fps, muxer)
+      val rec = HdrVideoRecorder(size.width, size.height, fps, muxer, sdrTag = log)
       hdrRecorder = rec // before prepare(): an encoder that fails to start is still released by finishTake()
       val surface = rec.prepare()
       recordTargets = listOf(preview, surface)

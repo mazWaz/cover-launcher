@@ -17,6 +17,13 @@ object WhiteBalance {
     0.0719453, -0.2289914, 1.4052427,
   )
 
+  /** Linear sRGB to linear Rec.2020 (ITU-R BT.2087). */
+  private val SRGB_TO_REC2020 = doubleArrayOf(
+    0.627404, 0.329283, 0.043313,
+    0.069097, 0.919540, 0.011362,
+    0.016391, 0.088013, 0.895595,
+  )
+
   /**
    * What the sensor reads off a white card lit by a black body of [kelvin]: red, green, blue, with green = 1.
    * The gains that make it white are 1 / red and 1 / blue. Null when the camera reports no colour matrix.
@@ -32,8 +39,11 @@ object WhiteBalance {
   /** The matrix from white-balanced sensor colours to linear sRGB at [kelvin]. Null without a forward matrix. */
   fun toSrgb(kelvin: Int, c: DngWriter.RawColor): DoubleArray? {
     val forward = mix(c.fwd1 ?: return null, c.fwd2, second(kelvin, c))
-    return DoubleArray(9) { i -> (0..2).sumOf { XYZ_D50_TO_SRGB[i / 3 * 3 + it] * forward[it * 3 + i % 3] } }
+    return product(XYZ_D50_TO_SRGB, forward)
   }
+
+  /** The same matrix ending in linear Rec.2020, for a stream tagged BT.2020 (10-bit video). */
+  fun toRec2020(kelvin: Int, c: DngWriter.RawColor): DoubleArray? = toSrgb(kelvin, c)?.let { product(SRGB_TO_REC2020, it) }
 
   /** How much of the second calibration set counts at [kelvin]: linear in 1 / T between the two lights, as in DNG. */
   private fun second(kelvin: Int, c: DngWriter.RawColor): Double {
@@ -70,6 +80,9 @@ object WhiteBalance {
 
   private fun mix(a: DoubleArray, b: DoubleArray?, w: Double): DoubleArray =
     if (b == null) a else DoubleArray(a.size) { (1 - w) * a[it] + w * b[it] }
+
+  private fun product(a: DoubleArray, b: DoubleArray): DoubleArray =
+    DoubleArray(9) { i -> (0..2).sumOf { a[i / 3 * 3 + it] * b[it * 3 + i % 3] } }
 
   private fun times(m: DoubleArray, v: DoubleArray): DoubleArray =
     DoubleArray(3) { m[it * 3] * v[0] + m[it * 3 + 1] * v[1] + m[it * 3 + 2] * v[2] }

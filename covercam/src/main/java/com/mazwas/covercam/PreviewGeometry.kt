@@ -88,6 +88,16 @@ internal object PreviewGeometry {
     else -> if (flip) 2 else 1
   }
 
+  /**
+   * The largest of [sizes] (width to height) that fits inside [maxW] x [maxH] in the shape [aspect] (width / height,
+   * 6% leeway); any shape when none has it. Null when nothing fits at all.
+   */
+  fun fitSize(sizes: List<Pair<Int, Int>>, aspect: Double, maxW: Int, maxH: Int): Pair<Int, Int>? {
+    val fits = sizes.filter { it.first <= maxW && it.second <= maxH }
+    return fits.filter { Math.abs(it.first.toDouble() / it.second - aspect) < 0.06 }.ifEmpty { fits }
+      .maxByOrNull { it.first.toLong() * it.second }
+  }
+
   /** Degrees away from the nearest straight pose (0/90/180/270): the horizon line is level near zero. */
   fun levelError(rollDegrees: Float): Float {
     val r = ((rollDegrees % 90f) + 90f) % 90f

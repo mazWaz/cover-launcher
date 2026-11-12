@@ -193,7 +193,10 @@ class CameraEngine(private val ctx: Context) {
     get() = prefs.getBoolean("v60", false)
     set(v) = prefs.edit().putBoolean("v60", v).apply()
 
-  /** Whether the open lens can record 1080p at a real 60 fps; the settings row is a plain "30" when it can't. */
+  /**
+   * Whether the open lens runs the sensor at 60 for a recording. The public frame-rate list ends at 30 on every lens;
+   * only the main lens obeys Samsung's recording keys (measured: ultrawide accepts them and stays at 33.3 ms).
+   */
   var video60Available = false
     private set
 
@@ -260,16 +263,23 @@ class CameraEngine(private val ctx: Context) {
   private val prefs = ctx.getSharedPreferences("covercam", Context.MODE_PRIVATE)
   private var aeLock = false
 
-  enum class Ratio(val label: String) { R4_3("4:3"), R16_9("16:9"), R1_1("1:1") }
+  enum class Ratio(val label: String, val aspect: Double) {
+    R4_3("4:3", 4.0 / 3), R16_9("16:9", 16.0 / 9), R1_1("1:1", 1.0)
+  }
 
-  /** The ratio chosen for photos. A JPEG is stored in it; a DNG keeps the whole sensor and carries it as its crop. */
+  /** The ratio chosen for photos and for VIDEO and HDRV. A JPEG is stored in it; a DNG keeps the whole sensor and carries it as its crop. */
   private var ratio = Ratio.R4_3
 
-  /** Every recorder here is 16:9, so the ratio button chooses for photos only. */
-  val ratioChoosable: Boolean get() = state.mode !in VIDEO_MODES
+  /**
+   * The shape of what the next shot shows. The preview is opened in it, so the screen shows what is saved.
+   * Slow motion has no 4:3 or 1:1: its high-speed list holds 16:9 and one wide shape, picked by [cycleRatio].
+   */
+  val shownRatio: Ratio get() = if (state.mode == Mode.SLOWMO) Ratio.R16_9 else ratio
 
-  /** The shape of what the next shot shows. The preview is opened in it, so the screen shows what is saved. */
-  val shownRatio: Ratio get() = if (state.mode in VIDEO_MODES) Ratio.R16_9 else ratio
+  val ratioLabel: String
+    get() = if (state.mode == Mode.SLOWMO) (if (slowIsWide()) "21:9" else "16:9") else ratio.label
+
+  private fun slowIsWide() = (hsSize?.let { it.width.toDouble() / it.height } ?: 0.0) > 2.0
 
   /** The shape the open camera's streams were picked for. */
   private var streamRatio = Ratio.R4_3
@@ -388,6 +398,17 @@ class CameraEngine(private val ctx: Context) {
 
   val logActive: Boolean get() = logVideo && state.mode == Mode.HDRVID
 
+  /** 10-bit video at 60 fps. Until it had its own switch LOG meant 60, so an existing LOG choice carries over. */
+  var hdr60: Boolean
+    get() = prefs.getBoolean("hdr60", prefs.getBoolean("vlog", false))
+    set(v) = prefs.edit().putBoolean("hdr60", v).apply()
+
+  fun cycleHdrFps() {
+    if (state.recording) return // a take keeps the frame rate it began with
+    hdr60 = !hdr60
+    state = state.copy(status = if (hdr60 && video60Available) "10-bit 60fps" else "10-bit 30fps")
+  }
+
   var imuRotationOn: Boolean
     get() = prefs.getBoolean("imurot", false)
     set(v) {
@@ -409,12 +430,16 @@ class CameraEngine(private val ctx: Context) {
   }
 
   fun cycleRatio() {
-    ratio = when (ratio) {
-      Ratio.R4_3 -> Ratio.R16_9
-      Ratio.R16_9 -> Ratio.R1_1
-      Ratio.R1_1 -> Ratio.R4_3
+    if (state.mode == Mode.SLOWMO) {
+      prefs.edit().putBoolean("slow21", !slowIsWide()).apply()
+    } else {
+      ratio = when (ratio) {
+        Ratio.R4_3 -> Ratio.R16_9
+        Ratio.R16_9 -> Ratio.R1_1
+        Ratio.R1_1 -> Ratio.R4_3
+      }
+      prefs.edit().putString("ratio", ratio.name).apply()
     }
-    prefs.edit().putString("ratio", ratio.name).apply()
     openCurrent()
   }
 
@@ -602,7 +627,7 @@ class CameraEngine(private val ctx: Context) {
         }
       }
 
-      video60Available = canRun60(ch, map, Size(1920, 1080))
+      video60Available = id == "0"
       readColorCalibration(ch)
       probeHighSpeed(ch)
       applyCharacteristicRanges(ch)
@@ -698,7 +723,7 @@ class CameraEngine(private val ctx: Context) {
     val zoomRange: Range<Float>? = ch.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)
     state = state.copy(
       isoRange = isoRange?.let { it.lower..it.upper } ?: 100..3200,
-      exposureRange = expRange?.let { it.lower..it.upper } ?: 1_000_000L..1_000_000_000L,
+      exposureRange = expRange?.let { it.lower..maxOf(it.upper, LONGEST_EXPOSURE_NS[currentId] ?: 0L) } ?: 1_000_000L..1_000_000_000L,
       evRange = evRange?.let { it.lower..it.upper } ?: 0..0,
       minFocus = minFocus,
     )
@@ -715,13 +740,18 @@ class CameraEngine(private val ctx: Context) {
     return b.build()
   }
 
-  private fun applyCommon(b: CaptureRequest.Builder) {
+  /** [still]: this request makes the file, so a hand-set shutter runs its full time; a preview frame follows with gain. */
+  private fun applyCommon(b: CaptureRequest.Builder, still: Boolean = false) {
     // CONTROL_MODE stays AUTO: OFF switches off every android.control.* setting, white balance presets included.
     b.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
     if (state.manual) {
       b.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
-      b.set(CaptureRequest.SENSOR_SENSITIVITY, state.iso)
-      b.set(CaptureRequest.SENSOR_EXPOSURE_TIME, state.exposureNs)
+      val (iso, exposure) =
+        if (still) state.iso to state.exposureNs else LongExposure.preview(state.iso, state.exposureNs, state.isoRange.last)
+      b.set(CaptureRequest.SENSOR_SENSITIVITY, iso)
+      b.set(CaptureRequest.SENSOR_EXPOSURE_TIME, exposure)
+      // a frame is at least as long as its exposure; the lens's public longest frame is only 0.15 s
+      if (exposure > LongExposure.PREVIEW_MAX_NS) b.set(CaptureRequest.SENSOR_FRAME_DURATION, exposure + FRAME_SLACK_NS)
     } else {
       b.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
       if (state.evRange.last > state.evRange.first) {
@@ -851,15 +881,19 @@ class CameraEngine(private val ctx: Context) {
   private var recordTargets: List<Surface> = emptyList()
   private var videoFps: Range<Int>? = null
 
+  /** Frame rate the running or starting take was asked for (30 or 60). */
+  private var recordFps = 30
+
   private fun buildRecordRequest(cam: CameraDevice): CaptureRequest {
     val b = cam.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
     recordTargets.forEach { b.addTarget(it) }
     applyCommon(b)
-    // HDR (HLG10) keeps the request it was verified with: no stabilisation, the template's own frame rate.
+    // HDR (HLG10) keeps the request it was verified with: no stabilisation, the template's own frame rate at 30.
     if (hdrRecorder == null) {
       b.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON)
-      videoFps?.let { b.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it) }
-    } else if (logActive) {
+      if (recordFps != 60) videoFps?.let { b.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it) }
+    }
+    if (recordFps == 60) {
       // the public list of frame rates ends at 30 on every lens: Samsung's own recording keys are what runs the
       // sensor at 60 (measured: 16.6 ms between frames with them, 33.3 ms with the range alone)
       b.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(60, 60))
@@ -1004,15 +1038,60 @@ class CameraEngine(private val ctx: Context) {
 
   /** A frame the HAL dropped never reaches the reader: without this the shutter would stay "busy" for good. */
   private val stillCallback = object : CameraCaptureSession.CaptureCallback() {
+    override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+      // what the sensor really did, not what was asked: the proof a long shutter was taken
+      Log.i(TAG, "still exposure=${result.get(CaptureResult.SENSOR_EXPOSURE_TIME)} frame=${result.get(CaptureResult.SENSOR_FRAME_DURATION)}")
+    }
+
     override fun onCaptureFailed(
       session: CameraCaptureSession,
       request: CaptureRequest,
       failure: android.hardware.camera2.CaptureFailure,
     ) {
+      Log.w(TAG, "still failed reason=${failure.reason}")
       nightFrames.clear()
       hdrFrames.clear()
-      state = state.copy(busy = false, status = "pengambilan gagal")
+      state = state.copy(busy = false, status = if (exposureCancelled) "eksposur dibatalkan" else "pengambilan gagal")
     }
+  }
+
+  // ---- a hand-set shutter over a second: the shot runs on its own, the screen counts and the shutter cancels
+
+  private var exposureStartedAt = 0L // elapsedRealtime of the running long exposure, 0 = none
+  private var exposureTotalSec = 0L
+  private var exposureCancelled = false // an abort reaches the callback as a plain error, not as FLUSHED
+
+  private val exposureTick = object : Runnable {
+    override fun run() {
+      if (exposureStartedAt == 0L || !state.busy) {
+        exposureStartedAt = 0L
+        return
+      }
+      val done = (android.os.SystemClock.elapsedRealtime() - exposureStartedAt) / 1000
+      state = state.copy(status = "eksposur $done / $exposureTotalSec dtk")
+      handler.postDelayed(this, 1000)
+    }
+  }
+
+  /** Called right after a still is sent: marks the shot busy and starts the count when its shutter is long. */
+  private fun beginLongExposure() {
+    if (!state.manual || !LongExposure.isLong(state.exposureNs)) return
+    exposureStartedAt = android.os.SystemClock.elapsedRealtime()
+    exposureCancelled = false
+    exposureTotalSec = state.exposureNs / 1_000_000_000L
+    state = state.copy(busy = true)
+    handler.post(exposureTick)
+  }
+
+  /** The shutter button while a long exposure runs. False when none does. */
+  fun cancelExposure(): Boolean {
+    if (exposureStartedAt == 0L) return false
+    exposureStartedAt = 0L
+    exposureCancelled = true
+    // aborting also stops the repeating preview request: it is started again at once
+    runCatching { session?.abortCaptures() }.onFailure { Log.w(TAG, "abort failed", it) }
+    refreshPreview()
+    return true
   }
 
   private fun applyStillExtras(b: CaptureRequest.Builder) {
@@ -1037,7 +1116,7 @@ class CameraEngine(private val ctx: Context) {
       try {
         val b = cam.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
         b.addTarget(rr.surface)
-        applyCommon(b)
+        applyCommon(b, still = true)
         lastJpegRotation = jpegOrientation()
         lastFlip = flipped()
         s.capture(b.build(), object : CameraCaptureSession.CaptureCallback() {
@@ -1056,10 +1135,11 @@ class CameraEngine(private val ctx: Context) {
             request: CaptureRequest,
             failure: android.hardware.camera2.CaptureFailure,
           ) {
-            state = state.copy(busy = false, status = "dng gagal")
+            state = state.copy(busy = false, status = if (exposureCancelled) "eksposur dibatalkan" else "dng gagal")
           }
         }, handler)
         state = state.copy(busy = true, status = "dng…")
+        beginLongExposure()
       } catch (t: Throwable) {
         Log.e(TAG, "dng capture failed", t)
         state = state.copy(status = "dng failed: ${t.message}")
@@ -1070,12 +1150,13 @@ class CameraEngine(private val ctx: Context) {
     try {
       val b = cam.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
       b.addTarget(r.surface)
-      applyCommon(b)
+      applyCommon(b, still = true)
       lastJpegRotation = jpegOrientation()
       lastFlip = flipped()
       b.set(CaptureRequest.JPEG_ORIENTATION, lastJpegRotation)
       applyStillExtras(b)
       s.capture(b.build(), stillCallback, handler)
+      beginLongExposure()
     } catch (t: Throwable) {
       Log.e(TAG, "capture failed", t)
       state = state.copy(status = "capture failed: ${t.message}")
@@ -1540,17 +1621,10 @@ class CameraEngine(private val ctx: Context) {
     ch.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
       ?.firstOrNull { it.lower == fps && it.upper == fps }
 
-  /** 60 fps needs a fixed 60 range, and both streams (preview and encoder) fast enough for 16.7 ms frames. */
-  private fun canRun60(
-    ch: CameraCharacteristics,
-    map: android.hardware.camera2.params.StreamConfigurationMap?,
-    video: Size,
-  ): Boolean = runCatching {
-    val frameNs = 1_000_000_000L / 60 + 500_000
-    map != null && fixedFpsRange(ch, 60) != null &&
-      map.getOutputMinFrameDuration(MediaRecorder::class.java, video) <= frameNs &&
-      map.getOutputMinFrameDuration(android.graphics.SurfaceTexture::class.java, previewSize) <= frameNs
-  }.getOrDefault(false)
+  /** The biggest recorder size of the chosen ratio inside [within]; the take is stored in the shape the screen shows. */
+  private fun pickVideoSize(recorderSizes: Array<Size>, within: Size): Size =
+    PreviewGeometry.fitSize(recorderSizes.map { it.width to it.height }, shownRatio.aspect, within.width, within.height)
+      ?.let { Size(it.first, it.second) } ?: within
 
   fun startRecording(): Boolean {
     val cam = device ?: return false
@@ -1561,17 +1635,17 @@ class CameraEngine(private val ctx: Context) {
       val ch = manager.getCameraCharacteristics(cam.id)
       val map = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
       val supported = map?.getOutputSizes(MediaRecorder::class.java) ?: emptyArray()
-      val target = if (video4k) Size(3840, 2160) else Size(1920, 1080)
-      val size = supported
-        .filter { it.width <= target.width && it.height <= target.height }
-        .maxByOrNull { it.width.toLong() * it.height }
-        ?: target
-      // 60 only when the camera can really run that fast: otherwise the file would claim 60 and hold 30
-      val fps = if (video60 && canRun60(ch, map, size)) 60 else 30
+      // 1088 tall, not 1080: the square size this HAL lists is 1088x1088
+      val target = if (video4k) Size(3840, 2160) else Size(1920, 1088)
+      val size = pickVideoSize(supported, target)
+      // 60 only where the sensor really runs it: otherwise the file would claim 60 and hold 30
+      val fps = if (video60 && video60Available) 60 else 30
+      recordFps = fps
       videoFps = fixedFpsRange(ch, fps)
-      videoNote = if (video60 && fps != 60) " (60 fps tidak didukung di ukuran ini)" else ""
+      videoNote = (if (video60 && fps != 60) " (60 fps hanya lensa 1.0x)" else "") +
+        (if (video4k && size.width < 3840) " (4K hanya 16:9)" else "")
       Log.i(TAG, "video " + size.width + "x" + size.height + "@" + fps + " range=" + videoFps + " choices=" + supported.size)
-      newRecorder(pfd, size, fps, if (size.width >= 3840) 48_000_000 else 20_000_000)
+      newRecorder(pfd, size, fps, (if (size.width >= 3840) 48_000_000 else 20_000_000) * (fps / 30))
 
       val camId = cam.id
       closeDevice(keepPreview = true)
@@ -1607,7 +1681,8 @@ class CameraEngine(private val ctx: Context) {
                 if (device !== cam) return
                 session = s
                 try {
-                  s.setRepeatingRequest(buildRecordRequest(cam), null, handler)
+                  reportedFps = 0
+                  s.setRepeatingRequest(buildRecordRequest(cam), rateReport.takeIf { recordFps == 60 }, handler)
                   recorder?.start()
                   // "recording" is set here, once frames really flow, not when the button was pressed
                   state = state.copy(
@@ -1625,6 +1700,8 @@ class CameraEngine(private val ctx: Context) {
             },
           )
           try {
+            // the recording keys only count when the session is built with them
+            if (recordFps == 60) config.sessionParameters = buildRecordRequest(cam)
             cam.createCaptureSession(config)
           } catch (t: Throwable) {
             Log.e(TAG, "video session failed", t)
@@ -1715,24 +1792,39 @@ class CameraEngine(private val ctx: Context) {
 
   private var hsSize: Size? = null
   private var hsFps = 0
+  private var hsFpsChoices: List<Int> = emptyList()
 
   /** High-speed configuration the UI must mirror for its preview surface. */
   val slowMotionSize: Size? get() = hsSize
   val slowMotionFps: Int get() = hsFps
+  val slowMotionFpsChoices: Int get() = hsFpsChoices.size
 
   /** Picks the best high-speed configuration the HAL advertises for this camera. */
   private fun probeHighSpeed(ch: CameraCharacteristics) {
     val map = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
     val sizes = map.highSpeedVideoSizes ?: emptyArray()
-    hsSize = sizes
-      .filter { it.width <= 1920 && it.height <= 1080 }
+    val upTo1080 = sizes.filter { it.width <= 1920 && it.height <= 1080 }
+    // measured list of the main lens: 1920x1080 and 1280x720 (16:9), 1920x824 (the wide shape)
+    val wide = upTo1080.filter { it.width.toDouble() / it.height > 2.0 }
+    hsSize = (if (prefs.getBoolean("slow21", false)) wide else upTo1080 - wide.toSet())
       .maxByOrNull { it.width.toLong() * it.height }
       ?: sizes.firstOrNull()
-    hsFps = hsSize?.let { s ->
-      map.getHighSpeedVideoFpsRangesFor(s)?.maxOfOrNull { it.upper } ?: 0
-    } ?: 0
+    // each shape has its own rates (1080p: 120 and 240, the wide one: 120); the chosen one is kept as far as it exists
+    hsFpsChoices = hsSize?.let { s ->
+      map.getHighSpeedVideoFpsRangesFor(s)?.map { it.upper }?.distinct()?.sorted()
+    } ?: emptyList()
+    hsFps = hsFpsChoices.lastOrNull { it <= prefs.getInt("slowfps", Int.MAX_VALUE) } ?: hsFpsChoices.firstOrNull() ?: 0
 
-    Log.i(TAG, "highSpeed size=" + hsSize + " fps=" + hsFps)
+    Log.i(TAG, "highSpeed size=" + hsSize + " fps=" + hsFps + " choices=" + hsFpsChoices)
+  }
+
+  /** The other rate of the open slow-motion size; one lens-size pair with a single rate has nothing to switch to. */
+  fun cycleSlowFps() {
+    if (state.recording || state.slowPreview) return
+    val next = hsFpsChoices.firstOrNull { it > hsFps } ?: hsFpsChoices.firstOrNull() ?: return
+    hsFps = next
+    prefs.edit().putInt("slowfps", next).apply()
+    state = state.copy(status = "slowmo ${next}fps")
   }
 
   /**
@@ -1824,16 +1916,16 @@ class CameraEngine(private val ctx: Context) {
     }
   }
 
-  private var logFps = 0
+  private var reportedFps = 0
 
-  /** Says the rate the sensor really runs at: the ultrawide stays at 30 whatever is asked of it. */
-  private val logRate = object : CameraCaptureSession.CaptureCallback() {
+  /** Says the rate the sensor really runs at, asked for at 60: a lens that ignores the keys stays at 30. */
+  private val rateReport = object : CameraCaptureSession.CaptureCallback() {
     override fun onCaptureCompleted(s: CameraCaptureSession, r: CaptureRequest, result: TotalCaptureResult) {
       val ns = result.get(CaptureResult.SENSOR_FRAME_DURATION)?.takeIf { it > 0 } ?: return
       val fps = Math.round(1e9 / ns).toInt()
-      if (fps == logFps || !state.recording) return
-      logFps = fps
-      state = state.copy(status = "merekam log $fps fps")
+      if (fps == reportedFps || !state.recording) return
+      reportedFps = fps
+      state = state.copy(status = "merekam ${if (logActive) "log " else ""}$fps fps")
     }
   }
 
@@ -1846,7 +1938,11 @@ class CameraEngine(private val ctx: Context) {
       val muxer = android.media.MediaMuxer(pfd.fileDescriptor, android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
       muxer.setOrientationHint(jpegOrientation())
       val log = logActive
-      val rec = HdrVideoRecorder(1920, 1080, if (log) 60 else 30, muxer)
+      val map = manager.getCameraCharacteristics(cam.id).get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+      val size = pickVideoSize(map?.getOutputSizes(MediaRecorder::class.java) ?: emptyArray(), Size(1920, 1088))
+      val fps = if (hdr60 && video60Available) 60 else 30
+      recordFps = fps
+      val rec = HdrVideoRecorder(size.width, size.height, fps, muxer)
       hdrRecorder = rec // before prepare(): an encoder that fails to start is still released by finishTake()
       val surface = rec.prepare()
       recordTargets = listOf(preview, surface)
@@ -1867,8 +1963,8 @@ class CameraEngine(private val ctx: Context) {
             if (device !== cam) return
             session = s
             try {
-              logFps = 0
-              s.setRepeatingRequest(buildRecordRequest(cam), logRate.takeIf { log }, handler)
+              reportedFps = 0
+              s.setRepeatingRequest(buildRecordRequest(cam), rateReport.takeIf { fps == 60 }, handler)
             } catch (t: Throwable) {
               Log.e(TAG, "hdr repeating failed", t)
               return endTake("hdr gagal: " + t.message)
@@ -1882,7 +1978,7 @@ class CameraEngine(private val ctx: Context) {
         },
       )
       // the recording keys only count when the session is built with them
-      if (log) config.sessionParameters = buildRecordRequest(cam)
+      if (fps == 60) config.sessionParameters = buildRecordRequest(cam)
       cam.createCaptureSession(config)
       return true
     } catch (t: Throwable) {
@@ -2038,20 +2134,23 @@ class CameraEngine(private val ctx: Context) {
 
   private fun pickJpegSize(sizes: Array<Size>, ratio: Ratio): Size {
     if (sizes.isEmpty()) return Size(4000, 3000)
-    val wanted = when (ratio) {
-      Ratio.R4_3 -> 4.0 / 3.0
-      Ratio.R16_9 -> 16.0 / 9.0
-      Ratio.R1_1 -> 1.0
-    }
     val matching = sizes.filter {
       val r = it.width.toDouble() / it.height
-      abs(r - wanted) < 0.06
+      abs(r - ratio.aspect) < 0.06
     }
     return (matching.ifEmpty { sizes.toList() }).maxByOrNull { it.width.toLong() * it.height }!!
   }
 
   companion object {
     private const val TAG = "CoverCam"
+    private const val FRAME_SLACK_NS = 10_000_000L
+
+    /**
+     * The longest shutter of each lens as Samsung lists it (`samsung.android.sensor.info.exposureTimeRange` in
+     * `dumpsys media.camera`, Flip5, 2026-11-10). The public range stops at 0.1 s (main) and 0.2 s (front); the vendor
+     * key itself is filtered out for apps, so the numbers are kept here. The ultrawide's 0.6 s is below its public 0.67 s.
+     */
+    private val LONGEST_EXPOSURE_NS = mapOf("0" to 30_000_000_000L, "1" to 30_000_000_000L)
     private const val NIGHT_FRAMES = 5
     private const val HDR_FRAMES = 3
     private val DEFAULT_EXTRA = mapOf("2" to 90, "0" to 270)
@@ -2061,7 +2160,6 @@ class CameraEngine(private val ctx: Context) {
     private const val BLUR_STEPS = 4
     private const val MIN_VALID_VIDEO_BYTES = 100_000L
     private val RAW_MODES = setOf(Mode.PHOTO, Mode.PRO)
-    private val VIDEO_MODES = setOf(Mode.VIDEO, Mode.SLOWMO, Mode.HDRVID)
 
     /** Vendor keys (int32) of Samsung's HAL, in the session parameters and in every request of the take. */
     private val SAMSUNG_RECORDING_FPS =

@@ -124,6 +124,8 @@ class CameraViewModel(private val engine: CameraEngine) : ViewModel() {
       CameraAction.ToggleImuRotation -> engine.imuRotationOn = !engine.imuRotationOn
       CameraAction.CycleVideoRes -> engine.cycleVideoRes()
       CameraAction.CycleVideoFps -> engine.cycleVideoFps()
+      CameraAction.CycleHdrFps -> engine.cycleHdrFps()
+      CameraAction.CycleSlowFps -> engine.cycleSlowFps()
       CameraAction.CycleTimelapseInterval -> engine.cycleTimelapseInterval()
       CameraAction.ResetCalibration -> engine.resetCalibration()
       CameraAction.StartCalibration -> _state.update { it.copy(settingsOpen = false, calibrating = true) }
@@ -240,7 +242,10 @@ class CameraViewModel(private val engine: CameraEngine) : ViewModel() {
   }
 
   private fun takePhoto() {
-    if (engine.state.busy) return
+    if (engine.state.busy) {
+      engine.cancelExposure() // a long exposure is the one shot the shutter can still stop
+      return
+    }
     if (engine.soundOn) runCatching { shutterSound.play(MediaActionSound.SHUTTER_CLICK) }
     if (engine.rawActive) engine.stashPreview()
     engine.capture()
@@ -454,8 +459,6 @@ private fun CameraUiState.merge(engine: CameraEngine): CameraUiState {
     manual = e.manual,
     manualFocus = e.manualFocus,
     locked = engine.locked,
-    rawActive = engine.rawActive,
-    logActive = engine.logActive,
     lastThumb = e.lastThumb ?: lastThumb,
     zoom = engine.currentZoom(),
     slowPreview = e.slowPreview,
@@ -466,8 +469,7 @@ private fun CameraUiState.merge(engine: CameraEngine): CameraUiState {
     previewScaleX = e.previewScaleX,
     previewScaleY = e.previewScaleY,
     pictureAspect = e.pictureAspect,
-    ratioLabel = engine.shownRatio.label,
-    ratioChoosable = engine.ratioChoosable,
+    ratioLabel = engine.ratioLabel,
     quality = engine.quality,
     soundOn = engine.soundOn,
     geotagOn = engine.geotagOn,
@@ -478,6 +480,9 @@ private fun CameraUiState.merge(engine: CameraEngine): CameraUiState {
     video4k = engine.video4k,
     video60 = engine.video60,
     video60Available = engine.video60Available,
+    hdr60 = engine.hdr60,
+    slowFps = engine.slowMotionFps,
+    slowFpsChoices = engine.slowMotionFpsChoices,
     timelapseIntervalSec = engine.timelapseIntervalSec,
     timelapseActive = engine.timelapseActive,
     capsInfo = engine.capsInfo(),

@@ -58,6 +58,8 @@ sealed interface CameraAction {
   data object ToggleImuRotation : CameraAction
   data object CycleVideoRes : CameraAction
   data object CycleVideoFps : CameraAction
+  data object CycleHdrFps : CameraAction
+  data object CycleSlowFps : CameraAction
   data object CycleTimelapseInterval : CameraAction
   data object ResetCalibration : CameraAction
 

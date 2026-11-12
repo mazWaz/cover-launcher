@@ -76,6 +76,22 @@ class PreviewGeometryTest {
     assertEquals(listOf(0, 0, 4000, 3000), PreviewGeometry.sensorCrop(4000, 3000, 1920f / 1440).toList())
   }
 
+  @Test
+  fun `a video takes the biggest size of its shape that fits, and any shape when it has none`() {
+    // what the Flip5's main lens lists for a recorder (dumpsys media.camera, 2026-11-10), reduced to the ones that matter
+    val listed = listOf(
+      4000 to 3000, 3840 to 2160, 2992 to 2992, 1920 to 1440, 1920 to 1080, 1440 to 1080, 1280 to 720, 1088 to 1088,
+    )
+    assertEquals(1920 to 1080, PreviewGeometry.fitSize(listed, 16.0 / 9, 1920, 1088))
+    assertEquals(3840 to 2160, PreviewGeometry.fitSize(listed, 16.0 / 9, 3840, 2160))
+    assertEquals(1440 to 1080, PreviewGeometry.fitSize(listed, 4.0 / 3, 1920, 1088))
+    assertEquals(1088 to 1088, PreviewGeometry.fitSize(listed, 1.0, 1920, 1088))
+    // 4K has no 4:3 on this list: the biggest one under it is the answer, not the 12 MP still size
+    assertEquals(1920 to 1440, PreviewGeometry.fitSize(listed, 4.0 / 3, 3840, 2160))
+    assertEquals(1920 to 1080, PreviewGeometry.fitSize(listOf(1920 to 1080), 1.0, 1920, 1088))
+    assertNull(PreviewGeometry.fitSize(listOf(4000 to 3000), 4.0 / 3, 1920, 1080))
+  }
+
   /** Applies an EXIF orientation to a tiny labelled image the way a viewer does; pixels are listed row by row. */
   private fun show(code: Int, px: List<String>, w: Int): List<String> {
     val h = px.size / w

@@ -110,19 +110,7 @@ internal fun SettingsPanel(state: CameraUiState, onAction: (CameraAction) -> Uni
       SettingRow("Garis level", onOff(state.levelOn)) { onAction(CameraAction.ToggleLevel) }
       SettingRow("Histogram", onOff(state.histogram)) { onAction(CameraAction.SetHistogram(!state.histogram)) }
       SettingRow("Focus peaking", onOff(state.peaking)) { onAction(CameraAction.SetPeaking(!state.peaking)) }
-      SettingRow("RAW DNG (Foto dan Pro)", onOff(state.dngOn)) { onAction(CameraAction.ToggleDng) }
       SettingRow("Rotasi dari IMU", onOff(state.imuRotationOn)) { onAction(CameraAction.ToggleImuRotation) }
-      SettingRow("Resolusi video", if (state.video4k) "4K" else "1080p") { onAction(CameraAction.CycleVideoRes) }
-      if (state.video60Available) {
-        SettingRow("FPS video", if (state.video60) "60" else "30") { onAction(CameraAction.CycleVideoFps) }
-      } else {
-        // the public list of frame rates offers nothing faster: say so instead of a switch that does nothing
-        SettingRow("FPS video", "30 (maks. mode Video)")
-      }
-      SettingRow("Video 10-bit (HDRV)", if (state.logVideo) "LOG 60 FPS" else "HLG 30 FPS") {
-        onAction(CameraAction.ToggleLogVideo)
-      }
-      SettingRow("Jeda timelapse", "${state.timelapseIntervalSec}s") { onAction(CameraAction.CycleTimelapseInterval) }
       SettingRow("Kualitas JPEG", state.quality.toString())
       Slider(
         value = state.quality.toFloat().coerceIn(60f, 100f),

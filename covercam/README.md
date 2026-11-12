@@ -36,7 +36,7 @@ Verifikasi:
 | Izin aktif | `adb shell dumpsys package com.samsung.android.ruler \| grep -E "CAMERA\|RECORD_AUDIO"` | `granted=true` |
 | Hasil tersimpan | `adb shell ls /sdcard/DCIM/CoverCam` | ada file JPEG/MP4/DNG baru |
 | Kamera dilepas saat keluar | tekan Home, lalu `adb shell dumpsys media.camera \| grep "Device 0"` | `Device 0 is closed, no client instance` |
-| Tes unit | `./gradlew :covercam:testDebugUnitTest` | 21 tes hijau |
+| Tes unit | `./gradlew :covercam:testDebugUnitTest` | 22 tes hijau |
 
 Mundur: `adb uninstall com.samsung.android.ruler`. Tidak ada izin sistem lain yang dipasang (tanpa Shizuku,
 tanpa accessibility), jadi tidak ada yang perlu dibersihkan.
@@ -46,15 +46,15 @@ tanpa accessibility), jadi tidak ada yang perlu dibersihkan.
 | Mode | Isi |
 |---|---|
 | FOTO | JPEG resolusi penuh, tap-to-focus, zoom, timer, senter |
-| VIDEO | H.264, 1080p/4K, 30 fps, stabilisasi, jeda/lanjut |
+| VIDEO | H.264, 1080p/4K, 30 atau 60 fps (60 hanya lensa 1.0x), rasio 4:3/16:9/1:1, stabilisasi, jeda/lanjut |
 | PRO | ISO, shutter, EV, fokus manual, WB preset + **Kelvin**, histogram, focus peaking |
 | NIGHT | burst 5 frame, tiap frame digeser ke frame pertama (sampai ±24 px) lalu dirata-rata per-tile, resolusi penuh |
 | HDR | bracket 3 eksposur (WB dikunci), exposure fusion berbobot mid-tone |
 | BOKEH | subjek oval bertepi lembut di atas latar yang di-blur (bukan depth asli — HAL tidak punya `DEPTH_OUTPUT`) |
 | TLAPSE | timelapse 1/2/5 detik, frame JPEG berurutan |
-| SLOWMO | constrained high-speed session (probe: 1080p@240), preview tetap hidup |
+| SLOWMO | constrained high-speed session, 1080p pada 120 atau 240 fps, rasio 16:9 atau 21:9 (1920×824, hanya 120 fps), preview tetap hidup |
 | PANO | 3 shot terpandu, overlap dicari SAD, seam di-feather |
-| HDRV | Video 10-bit, HEVC Main10 lewat MediaCodec/MediaMuxer, tanpa suara: **HLG 30 fps** atau **log 60 fps** (lihat di bawah) |
+| HDRV | Video 10-bit, HEVC Main10 lewat MediaCodec/MediaMuxer, tanpa suara: kurva **HLG** atau **log**, 30 atau 60 fps, rasio 4:3/16:9/1:1 (lihat di bawah) |
 
 PRO mulai serba otomatis: satu baris nilai (ISO, S, F, EV, WB) di tepi bawah gambar. Ketuk satu nilai dan
 slider-nya terbuka di atas baris itu. Menggeser ISO atau shutter mematikan auto exposure (nilai awalnya diambil
@@ -62,17 +62,27 @@ dari metering terakhir); menggeser EV mengembalikannya; menggeser fokus mematika
 mengembalikannya. Chip **AUTO** di samping slider mengembalikan semuanya. WB membuka dua baris: lima preset, lalu
 slider Kelvin selebar gambar (di gambar 9:16 satu baris tidak cukup untuk keduanya).
 
+Shutter sampai **30 detik** di lensa 1.0x dan depan. Daftar publik Camera2 berhenti di 0,1 s (utama) dan 0,2 s
+(depan); Samsung menyimpan batas yang sama dengan Pro-nya di kunci vendor `samsung.android.sensor.info.exposureTimeRange`
+(30 s), tetapi kunci itu tidak dibuka untuk aplikasi (`CameraCharacteristics.keys` tidak mencantumkannya, `get` mengembalikan
+`null`). Angkanya karena itu ditulis tetap di `LONGEST_EXPOSURE_NS`. Ultrawide tetap 0,67 s. Di atas 0,1 s preview tidak
+membeku: frame preview memakai 0,1 s dan ISO dinaikkan sebanding (`LongExposure.preview`), hanya jepretan yang memakai
+waktu penuh dan `SENSOR_FRAME_DURATION` ikut diperpanjang. Di atas 1 s layar menghitung (`eksposur 8 / 30 dtk`), tombol
+shutter merah, dan mengetuknya membatalkan. Terbukti di HP: sensor melaporkan `exposure=30000000000`, berkas tersimpan
+31 detik setelah ketukan (dua kali, dari aplikasi yang baru dibuka).
+
 ## Video log 10-bit 60 fps (mode HDRV)
 
-Pengaturan **Video 10-bit (HDRV)** memilih isi mode HDRV: `HLG 30 FPS` (bawaan) atau `LOG 60 FPS`. Saat log aktif
-lencana `LOG` muncul dan preview sudah memakai kurva yang sama dengan berkas: gambar datar di layar adalah gambar
+Di atas gambar mode HDRV ada tiga chip: **HLG/LOG** (kurva), **FPS** (30 atau 60) dan **rasio**; ketiganya berdiri
+sendiri. Bawaan `HLG` 30 fps; pilihan `LOG` lama membawa serta 60 fps karena dulu keduanya satu. Saat log aktif chip
+`LOG` menyala putih dan preview sudah memakai kurva yang sama dengan berkas: gambar datar di layar adalah gambar
 yang disimpan.
 
 | | HLG | LOG |
 |---|---|---|
-| Berkas | HEVC Main10, 1920×1080, 30 fps, target 40 Mb/s | HEVC Main10, 1920×1080, 60 fps, target 60 Mb/s |
+| Berkas | HEVC Main10, 1920×1080 (16:9), 1440×1080 (4:3) atau 1088×1088 (1:1), target 40 Mb/s di 30 fps | sama, target 60 Mb/s di 60 fps |
 | Kurva | HLG dari HAL | GoPro Protune Flat: `y = ln(112x + 1) / ln(113)` |
-| Lensa | id `0` dan `2` | 60 fps hanya lensa utama (id `0`); ultrawide (id `2`) tetap 30 fps dan status menuliskannya |
+| Lensa | id `0` dan `2` | 60 fps hanya lensa utama (id `0`); tombol FPS diredupkan di ultrawide |
 
 Membuka klip log di pengolah video: gamma masukan **GoPro Protune Flat**, gamut **Rec.2020**. Tanpa preset itu,
 rumus baliknya `x = (113^y − 1) / 112` dengan `y = (kode − 64) / 876` (10-bit, limited range). `x = 0.18` adalah
@@ -119,7 +129,8 @@ diputar). Di OLED itu piksel mati, jadi kontrol ditaruh di sana dan tidak ada ya
 └───────┴────────────────┴───────┘    └────────────────────────┴──┘
 ```
 
-Saat diam hanya ada lima sasaran sentuh: zoom, opsi, galeri, mode, shutter. Sisanya dibuka dari kelimanya.
+Saat diam hanya ada lima sasaran sentuh: zoom, opsi, galeri, mode, shutter. Sisanya dibuka dari kelimanya, kecuali
+pengaturan milik mode itu sendiri: itu chip di tepi atas gambar (lihat Kontrol).
 Polanya diambil dari kamera Samsung di cover (dilihat langsung di HP ini): satu deret tombol bulat kecil, laci
 yang membuka di tempat, dan mode sebagai halaman yang digeser. Bedanya: Samsung tidak punya tombol shutter
 (ketuk layar = jepret) dan memotong gambar agar penuh; di sini ketuk = fokus dan gambar ditampilkan utuh.
@@ -143,7 +154,13 @@ yang membuka di tempat, dan mode sebagai halaman yang digeser. Bedanya: Samsung 
   nama menunjukkan posisi mode itu di antara sepuluh.
 - **Tombol zoom** — tangga `0.5x · 1.0x · 2x · 4x` (dua pertama berganti lensa). Pinch tetap
   bekerja sampai batas lensa (maks. 8×).
-- **Tombol opsi** — senter, timer (atau jeda timelapse), rasio, grid, ganti kamera, pengaturan.
+- **Tombol opsi** — senter, timer (atau jeda timelapse), grid, ganti kamera, pengaturan. Enam tombol, jadi pengaturan
+  dan tombol tutup selalu terlihat.
+- **Chip di tepi atas gambar** — pengaturan milik mode yang sedang aktif. Chip menunjukkan nilai sekarang (`1080P`,
+  `60 FPS`, `16:9`, `LOG`) dan satu ketukan mengubahnya; putih berarti menyala. FOTO dan PRO: `RAW`, rasio. VIDEO:
+  resolusi, FPS, rasio. SLOWMO: FPS, rasio. HDRV: kurva, FPS, rasio. Mode lain: rasio. Chip diredupkan bila tidak bisa
+  diubah (FPS 60 di ultrawide, rasio dan FPS saat merekam). Letaknya mengikuti tepi atas gambar, jadi bergeser saat
+  rasio berganti.
 - Kedua laci (zoom dan opsi) diakhiri tombol tutup, dan menutup sendiri beberapa detik setelah perubahan terakhir.
 - **Lingkaran kecil bergambar** — galeri in-app: foto dan video berurutan waktu, bagikan, putar, hapus (dua ketukan).
 - **Tap gambar** — fokus dan metering di titik itu. **Tekan-lama** — kunci AE/AF.
@@ -152,8 +169,8 @@ yang membuka di tempat, dan mode sebagai halaman yang digeser. Bedanya: Samsung 
 - **Volume atas** — mode berikutnya. Mode tidak bisa diganti selama merekam.
 - **Back** — menutup panel yang sedang terbuka dulu (viewer, galeri, daftar mode, pengaturan, kalibrasi).
 
-Di atas gambar hanya muncul yang sedang berlaku: jam rekam, `AE/AF TERKUNCI`, `RAW`, `TIMER 3S`, dan pesan
-singkat yang memudar sendiri.
+Di bawah chip hanya muncul yang sedang berlaku: jam rekam, `AE/AF TERKUNCI`, `TIMER 3S`, dan pesan singkat yang
+memudar sendiri.
 
 ## Rasio
 
@@ -163,9 +180,10 @@ Preview dibuka dalam bentuk berkas yang akan disimpan, jadi gambar di layar adal
 |---|---|---|---|
 | JPEG (FOTO, PRO, NIGHT, BOKEH, HDR, TLAPSE, PANO) | pilihan tombol rasio: 4:3, 16:9, 1:1 | 1920×1440, 1920×1080, 1088×1088 | 4000×3000, 4000×2252, 2992×2992 |
 | DNG (RAW menyala, di FOTO dan PRO) | pilihan tombol rasio, ditulis sebagai crop | sama dengan JPEG | 4000×3000 RAW16, seluruh sensor |
-| Video (VIDEO, SLOWMO, HDRV) | 16:9 | 1920×1080 | ukuran perekam |
+| Video (VIDEO, HDRV) | pilihan tombol rasio: 4:3, 16:9, 1:1 (sama dengan foto) | 1920×1440, 1920×1080, 1088×1088 | 1440×1080, 1920×1080, 1088×1088 (4K: 1920×1440, 3840×2160, 1088×1088) |
+| Slow-mo | pilihan tombol rasio: 16:9 atau 21:9 (4:3 dan 1:1 tidak ada di daftar high-speed) | 1920×1080 atau 1920×824 | sama dengan preview |
 
-Di mode video tombol rasio diredupkan dan menampilkan 16:9; pilihan untuk foto tetap tersimpan. DNG selalu berisi
+Rasio untuk VIDEO dan HDRV sama dengan yang dipilih untuk foto. Tombol rasio diredupkan saat merekam, karena mengganti rasio membuka ulang kamera dan mengakhiri rekaman. DNG selalu berisi
 seluruh sensor: rasio ditulis sebagai `DefaultCropOrigin` / `DefaultCropSize`, jadi pengolah RAW membukanya dalam
 bentuk yang dibidik dan bagian di luar crop tetap ada di berkas. Berpindah antara mode yang bentuknya berbeda membuka ulang kamera. Ukuran di atas dari daftar stream HAL
 untuk id `0` dan `2` (`dumpsys media.camera`); lensa yang tidak punya bentuk itu memakai stream terbesarnya.
@@ -179,13 +197,14 @@ Terukur di HP ini (2026-11-10, build release, `dumpsys media.camera` + tangkapan
 | RAW menyala (id `0`) | tombol rasio tetap aktif: preview 1920×1440, 1920×1080, 1088×1088 di samping RAW16 4000×3000; DNG 16:9 dan 1:1 terbaca 4000×2250 dan 3000×3000 di macOS (`sips`), bingkainya sama dengan preview |
 | Home lalu buka lagi | stream tetap 1920×1440, gambar tidak melar (sebelumnya 1088×1088) |
 | VIDEO (id `2`), HDRV dan SLOWMO (id `0`) | preview 1920×1080 sebelum dan selama rekam, berkas tersimpan (perekam 1920×1080; slow-mo 1080p@240) |
+| Rasio dan FPS di VIDEO, SLOWMO, HDRV (id `0`, `ffprobe`) | VIDEO 4:3 30 fps: 1440×1080, 29,8 fps; 1:1 60 fps: 1088×1088, 59,4 fps; 16:9 60 fps: 1920×1080, 59,4 fps; 4K 16:9 60 fps (2026-11-12): 3840×2160, 60,2 fps, 118 Mb/s. SLOWMO 16:9 pada 240: 1920×1080, rata-rata 177 frame/s (di bawah 240, belum diselidiki); pada 120: 115,8; 21:9: 1920×824, 115,8. HDRV HLG 30: 1920×1080, 29,8; HLG 60: 59,6; LOG 4:3 60: 1440×1080, 59,4; LOG 1:1 30: 1088×1088, 29,8 |
 | Laci zoom | tombol tutup tampil dan menutup laci |
 
 ## Settings
 
-Suara shutter · geotag · garis level · histogram · focus peaking · RAW DNG · rotasi dari IMU · resolusi video ·
-FPS video · video 10-bit (HLG/log) · jeda timelapse · kualitas JPEG · kalibrasi preview · kemampuan HAL · reset kalibrasi (semua
-persisten di SharedPreferences, kecuali histogram dan focus peaking).
+Suara shutter · geotag · garis level · histogram · focus peaking · rotasi dari IMU · kualitas JPEG · kalibrasi preview ·
+kemampuan HAL · reset kalibrasi (semua persisten di SharedPreferences, kecuali histogram dan focus peaking). Yang hanya
+berlaku di satu mode (RAW, resolusi/FPS video, HLG/LOG, jeda timelapse) ada di chip mode itu, bukan di sini.
 
 RAW DNG hanya berlaku di FOTO dan PRO: di mode lain (NIGHT, HDR, BOKEH, PANO, TLAPSE) stream JPEG dipakai,
 karena penggabungan frame membutuhkannya.
@@ -224,10 +243,10 @@ Terukur di HP ini (2026-11-10):
 ## Batasan
 
 - **Depth asli mustahil** — dump HAL tidak memuat satu pun device dengan `DEPTH_OUTPUT`.
-- **60 fps hanya di log HDRV, lensa utama**: untuk semua id HAL hanya mendaftarkan rentang sampai `[30, 30]`
+- **60 fps hanya di lensa utama (id `0`)**: untuk semua id HAL hanya mendaftarkan rentang sampai `[30, 30]`
   (`dumpsys media.camera`), dan meminta `[60, 60]` saja tetap memberi 33,3 ms per frame. Yang menjalankan sensor di
-  60 adalah kunci Samsung (lihat Catatan teknis). Mode VIDEO (MediaRecorder) belum memakainya: baris FPS di
-  pengaturan menulis `30 (maks. mode Video)`.
+  60 adalah kunci Samsung (lihat Catatan teknis); VIDEO dan HDRV sama-sama memakainya. Di lensa lain tombol FPS
+  diredupkan pada `30`. Slow-mo punya rentangnya sendiri (120 dan 240 di 1080p, hanya 120 di 21:9).
 - **Video lensa utama masih tercermin**: `MediaRecorder` hanya menerima rotasi, bukan pencerminan. Foto dan DNG sudah benar.
 - Preview SLOWMO tidak dicerminkan dan tidak diputar oleh aplikasi (SurfaceView); ia menampilkan gambar seperti klipnya.
 - HDRV tanpa audio.
@@ -245,7 +264,7 @@ lensa depan (id `1`, `3`: tertutup saat HP dilipat), PANO setelah perubahan ini,
 mengetuk area gelap menerangkan gambar).
 
 Belum dilihat di HP setelah perubahan rasio: gambar 1:1 saat cover tegak (yang terlihat: cover diputar), tap-to-focus
-pada preview 16:9 dan 1:1 (baru tes unit), DNG dengan eksposur panjang di ruang yang benar-benar gelap, crop DNG di
+pada preview 16:9 dan 1:1 (baru tes unit), DNG dengan eksposur panjang (30 s baru dicoba untuk JPEG, dan hanya di ruang terang) di ruang yang benar-benar gelap, crop DNG di
 galeri dan pengolah RAW di HP (yang dicek: macOS).
 
 ## Catatan teknis

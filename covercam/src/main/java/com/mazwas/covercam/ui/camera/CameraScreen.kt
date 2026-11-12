@@ -168,7 +168,7 @@ fun CameraScreen(
 private fun Stage(state: CameraUiState, onAction: (CameraAction) -> Unit) {
   var drawer by rememberSaveable { mutableStateOf(Drawer.None) }
   // An open drawer closes by itself a little after the last change made in it; a zoom step is picked quickly.
-  LaunchedEffect(drawer, state.zoom, state.lensIndex, state.torch, state.timerSeconds, state.ratioLabel, state.grid) {
+  LaunchedEffect(drawer, state.zoom, state.lensIndex, state.torch, state.timerSeconds, state.grid) {
     if (drawer != Drawer.None) {
       delay(if (drawer == Drawer.Zoom) 3000 else 6000)
       drawer = Drawer.None
@@ -248,10 +248,11 @@ private fun Picture(state: CameraUiState, onAction: (CameraAction) -> Unit, modi
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+      ModeChips(state, onAction)
       Badges(state)
       StatusToast(state.status, state.lastThumb)
     }
-    if (state.histogram) Histogram(state.histogramData, Modifier.align(Alignment.TopEnd).padding(8.dp))
+    if (state.histogram) Histogram(state.histogramData, Modifier.align(Alignment.TopEnd).padding(top = 52.dp, end = 8.dp))
     ModeFlash(state.mode, Modifier.align(Alignment.Center))
 
     if (state.countdown > 0) {
@@ -408,6 +409,103 @@ private fun PictureGuides(state: CameraUiState) {
   }
 }
 
+/** One setting of the mode on screen: the strip shows what it is now, a tap on it changes it. */
+private class ModeChip(
+  val text: String,
+  val label: String,
+  val tag: String,
+  val action: CameraAction,
+  val on: Boolean = false,
+  val enabled: Boolean = true,
+)
+
+/** What a mode has to set, in the order it is read: its own settings first, the shape of the picture last. */
+private fun modeChips(state: CameraUiState): List<ModeChip> {
+  val running = state.recording || state.timelapseActive || state.slowPreview
+  val ratio = ModeChip(state.ratioLabel, "Rasio ${state.ratioLabel}", "ratio", CameraAction.CycleRatio, enabled = !running)
+  // a lens that can't run 60 shows a dimmed 30 instead of a switch that does nothing
+  fun fps(want60: Boolean, label: String, tag: String, action: CameraAction): ModeChip {
+    val value = if (want60 && state.video60Available) 60 else 30
+    return ModeChip("$value FPS", "$label $value fps", tag, action, enabled = state.video60Available && !running)
+  }
+  return when (state.mode) {
+    CameraEngine.Mode.PHOTO, CameraEngine.Mode.PRO -> listOf(
+      ModeChip("RAW", if (state.dngOn) "RAW DNG nyala" else "RAW DNG mati", "raw", CameraAction.ToggleDng, on = state.dngOn),
+      ratio,
+    )
+    CameraEngine.Mode.VIDEO -> listOf(
+      ModeChip(
+        if (state.video4k) "4K" else "1080P", "Resolusi video ${if (state.video4k) "4K" else "1080p"}", "video_res",
+        CameraAction.CycleVideoRes, enabled = !running,
+      ),
+      fps(state.video60, "FPS video", "video_fps", CameraAction.CycleVideoFps),
+      ratio,
+    )
+    CameraEngine.Mode.HDRVID -> listOf(
+      ModeChip(
+        if (state.logVideo) "LOG" else "HLG", "Video 10-bit ${if (state.logVideo) "LOG" else "HLG"}", "log_video",
+        CameraAction.ToggleLogVideo, on = state.logVideo, enabled = !state.recording,
+      ),
+      fps(state.hdr60, "FPS video 10-bit", "hdr_fps", CameraAction.CycleHdrFps),
+      ratio,
+    )
+    CameraEngine.Mode.SLOWMO -> listOf(
+      ModeChip(
+        "${state.slowFps} FPS", "FPS slow motion ${state.slowFps}", "slow_fps", CameraAction.CycleSlowFps,
+        enabled = state.slowFpsChoices > 1 && !running,
+      ),
+      ratio,
+    )
+    else -> listOf(ratio)
+  }
+}
+
+@Composable
+private fun ModeChips(state: CameraUiState, onAction: (CameraAction) -> Unit) {
+  FlowRow(
+    Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+    verticalArrangement = Arrangement.spacedBy(6.dp),
+  ) {
+    modeChips(state).forEach { c ->
+      StripChip(c.text, c.label, c.on, c.enabled, Modifier.testTag(c.tag)) { onAction(c.action) }
+    }
+  }
+}
+
+/** Pill with a 36 dp touch height; white when [on]. It carries its own dark fill, so it reads over any picture. */
+@Composable
+private fun StripChip(
+  text: String,
+  description: String,
+  on: Boolean,
+  enabled: Boolean,
+  modifier: Modifier = Modifier,
+  onClick: () -> Unit,
+) {
+  val shape = RoundedCornerShape(50)
+  Box(
+    modifier
+      .heightIn(min = 36.dp)
+      .widthIn(min = 44.dp)
+      .alpha(if (enabled) 1f else 0.35f)
+      .clip(shape)
+      .background(if (on) MaterialTheme.colorScheme.primary else Scrim)
+      .border(1.dp, if (on) Color.Transparent else MaterialTheme.colorScheme.outline, shape)
+      .clickable(enabled = enabled, onClickLabel = description, role = Role.Button, onClick = onClick)
+      .padding(horizontal = 12.dp),
+    contentAlignment = Alignment.Center,
+  ) {
+    Text(
+      text,
+      color = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+      style = MaterialTheme.typography.labelMedium,
+      maxLines = 1,
+      modifier = Modifier.semantics { contentDescription = description },
+    )
+  }
+}
+
 /** What the camera is doing right now, small, at the top of the picture. Nothing when there is nothing to say. */
 @Composable
 private fun Badges(state: CameraUiState) {
@@ -427,8 +525,6 @@ private fun Badges(state: CameraUiState) {
       }
       else -> {
         if (state.locked) Badge { Label("AE/AF TERKUNCI", color = MaterialTheme.colorScheme.error, small = true) }
-        if (state.rawActive) Badge { Label("RAW", color = MaterialTheme.colorScheme.onSurface, small = true) }
-        if (state.logActive) Badge { Label("LOG", color = MaterialTheme.colorScheme.onSurface, small = true) }
         if (state.timerSeconds > 0 && state.countdown == 0) {
           Badge { Label("TIMER ${state.timerSeconds}S", color = MaterialTheme.colorScheme.onSurface, small = true) }
         }
@@ -596,12 +692,6 @@ private fun DrawerItems(
           onAction(CameraAction.CycleTimer)
         }
       }
-      RoundBtn(
-        "Rasio ${state.ratioLabel}",
-        text = state.ratioLabel,
-        enabled = state.ratioChoosable,
-        modifier = Modifier.testTag("ratio"),
-      ) { onAction(CameraAction.CycleRatio) }
       RoundBtn("Grid", icon = R.drawable.ic_grid, on = state.grid, modifier = Modifier.testTag("grid")) {
         onAction(CameraAction.SetGrid(!state.grid))
       }
@@ -892,8 +982,11 @@ private fun logPosition(v: Long, a: Long, b: Long): Float {
   return ((ln(v.coerceAtLeast(1).toDouble()) - la) / (lb - la)).toFloat().coerceIn(0f, 1f)
 }
 
-private fun shutterLabel(ns: Long): String =
-  if (ns >= 1_000_000_000L) "%.1fs".format(ns / 1_000_000_000.0) else "1/%.0f".format(1_000_000_000.0 / ns.coerceAtLeast(1))
+private fun shutterLabel(ns: Long): String = when {
+  ns >= 10_000_000_000L -> "%.0fs".format(ns / 1_000_000_000.0)
+  ns >= 1_000_000_000L -> "%.1fs".format(ns / 1_000_000_000.0)
+  else -> "1/%.0f".format(1_000_000_000.0 / ns.coerceAtLeast(1))
+}
 
 // ---------------------------------------------------------------- shared pieces
 
@@ -1041,7 +1134,6 @@ private fun ProPreview() {
         iso = 400,
         minFocus = 10f,
         evRange = -4..4,
-        rawActive = true,
       ),
       onAction = {},
     )

@@ -1032,6 +1032,11 @@ class CameraEngine(private val ctx: Context) {
   fun capture() {
     // a second burst on top of a running one would mix their frames
     if (state.busy || state.recording) return
+    // what the last long exposure left behind is not this shot's: its count would run on over it, the shutter
+    // would cancel it, and a failure would be reported as "cancelled"
+    handler.removeCallbacks(exposureTick)
+    exposureStartedAt = 0L
+    exposureCancelled = false
     when (state.mode) {
       Mode.NIGHT -> captureBurst()
       Mode.HDR -> captureHdr()

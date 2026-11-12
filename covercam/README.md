@@ -78,6 +78,12 @@ Membuka klip log di pengolah video: gamma masukan **GoPro Protune Flat**, gamut 
 rumus baliknya `x = (113^y − 1) / 112` dengan `y = (kode − 64) / 876` (10-bit, limited range). `x = 0.18` adalah
 abu-abu tengah (`y ≈ 0.65`), `x = 1` sensor yang jenuh.
 
+Untuk memakai LUT S-Log3, pasang dulu salah satu LUT di `lut/` (dibuat oleh `lut/make_slog3_lut.py`), baru LUT
+S-Log3-nya: `protune_to_slog3.cube` hanya mengganti kurva; `protune_rec2020_to_slog3_sgamut3cine.cube` juga
+mengubah gamut, untuk LUT yang menyebut S-Gamut3.Cine. Klip dibaca sebagai video range; keluarannya S-Log3 menurut
+rumus Sony (hitam 0,093, abu-abu tengah 0,411). Sensor yang jenuh berhenti di 0,596, jadi LUT S-Log3 menampilkan
+putih sebagai abu-abu terang sampai highlight dinaikkan.
+
 Terukur di HP (2026-11-10, `ffprobe` pada berkas yang ditarik):
 
 | Rekaman | Berkas | Status di layar |
